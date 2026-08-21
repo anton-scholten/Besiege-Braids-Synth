@@ -49,6 +49,14 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   wider carry can be typed instead, up to 600 s and 100000 m. The limit belongs to the
   setting rather than the panel, so what is stored is always inside the bounds the
   setting declares; the handle simply rests against its stop.
+- **The note lights up while the block sounds**, in a colour off a slider on
+  Besiege's own mapper — the one setting worth reaching without opening the block
+  up, and the only one left there beside the key and the toggle. It answers a key,
+  an automation variable and the panel's LISTEN alike, since it watches the gate
+  rather than what opened it. The block wears its own two-by-two texture to do it:
+  the note takes its colour from a single texel, so one texel per corner lights the
+  note without touching the cage, and lighting one synth block does not light every
+  other one on the machine.
 - **RANGE**, in metres: the radius the block is at full volume within, with the
   1/distance falloff scaled to match, so one dial covers both how loud a block is
   and how far away it can still be heard.
@@ -60,8 +68,15 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   costs nothing here.
 
 - **A block of its own to look at.** The model is Special Effects' text block cage
-  with its lettering stripped out, and standing inside it is a pair of beamed
-  semiquavers. The note is built at load rather than shipped — two tilted ellipses,
+  with its lettering stripped out, painted a flat grey, and standing inside it is a
+  pair of beamed semiquavers in black. Mesh and texture are both generated, by
+  `./tools/make-block-mesh.py`: the texture is a 714-byte square of grey with one
+  black corner, which is where the note's vertices look, so the note needs no
+  material of its own and stays black whatever colour the machine is painted. The
+  note is part of the mesh rather than added at load, which is the only way it can
+  reach the toolbar icon — Besiege draws that from the mesh. The cage is emitted
+  two-sided as well: it is an outer skin with no inner walls, so without that its
+  far pillars are culled away and the block reads hollow from the inside. The note is built at load rather than shipped — two tilted ellipses,
   two stems and two slanted beams, extruded — so the mod still carries no geometry
   it did not compute, and the shape is a handful of constants to adjust rather than
   a mesh to re-export.
@@ -143,7 +158,7 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   own project. The three shapes that need nothing shipped -- ring mod, swarm and
   comb -- are already here.
 - Braids' quantizer, its AD envelope and its META mode.
-- A texture of its own. The cage carries Special Effects' text block texture.
+- Nothing outstanding on the block's look.
 
 **If you built a machine against an earlier working copy**, the Shape setting is
 now a Model setting over a longer list in a different order, so a saved synth

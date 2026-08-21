@@ -38,7 +38,25 @@ namespace BraidsSynth
         private MSlider AttackSlider;
         private MSlider ReleaseSlider;
         private MSlider RangeSlider;
+        private MColourSlider NoteColour;
         private MToggle PushToggle;
+
+        /// <summary>The block's grey, as the shipped texture paints it.</summary>
+        private static readonly Color Grey = new Color(0.314f, 0.314f, 0.314f, 1f);
+
+        /// <summary>The note with the gate shut: black, lifted to keep its form.</summary>
+        private static readonly Color Resting = new Color(0.071f, 0.071f, 0.071f, 1f);
+
+        // This block's own material and the two-by-two texture under it. The note is
+        // part of the block's mesh and takes its colour from a single texel, so one
+        // texel per corner is all it takes to light the note without touching the
+        // cage -- and being this block's own, lighting one synth block does not light
+        // every other one on the machine.
+        private MeshRenderer worn;
+        private Material paint;
+        private Texture2D skin;
+        private Color inked;
+        private bool complained;
 
         /// <summary>
         /// What every synth block's AudioSource plays. Never heard -- the filter
@@ -103,6 +121,11 @@ namespace BraidsSynth
             AttackSlider = AddSlider("Attack", "AttackKey", 0.01f, 0f, 600f);
             ReleaseSlider = AddSlider("Release", "ReleaseKey", 0.05f, 0f, 600f);
             RangeSlider = AddSlider("Range", "RangeKey", 8f, 1f, 100000f);
+            // Stays on Besiege's own mapper rather than moving to the panel: it says
+            // nothing about the sound, and it is the one setting worth reaching
+            // without opening the block up.
+            NoteColour = AddColourSlider("Note", "NoteColorKey",
+                                         new Color(0.012f, 1f, 0.847f, 1f), false);
             PushToggle = AddToggle("Toggle", "ToggleKey", false);
 
             // Everything but the key and the toggle belongs to the panel, which has
@@ -128,10 +151,6 @@ namespace BraidsSynth
             block = new short[4096];
             PushSettings();
 
-            // The block is a cage with a note standing in it; the note is built
-            // rather than shipped -- see NoteMesh.
-            NoteMesh.Attach(transform);
-
             source = GetComponent<AudioSource>();
             if (source == null)
             {
@@ -146,6 +165,111 @@ namespace BraidsSynth
             // clip, buys the panning back at the cost of that clip's read-ahead,
             // which is a note that arrives late.
             source.spatialBlend = 0f;
+
+            Dress();
+        }
+
+        /// <summary>
+        /// Gives the block its own material and a two-by-two texture to wear, so its
+        /// note can be lit without lighting every other synth block on the machine.
+        ///
+        /// Point sampled, so the four texels cannot bleed into one another: the note
+        /// looks below a half in u and v, the cage's unwrap sits above 0.61 in both,
+        /// and that is one corner each with nothing in between to blur.
+        ///
+        /// Returns quietly if Besiege has not built the block's mesh yet and Update
+        /// tries again, which is cheaper than depending on an order of events this
+        /// block has already been wrong about once.
+        /// </summary>
+        private void Dress()
+        {
+            if (worn == null)
+            {
+                // The one whose material *has* a main texture. That finds the mesh
+                // the block is actually seen as, and settles in passing that the
+                // shader takes its picture from where this code puts one.
+                MeshRenderer[] found = GetComponentsInChildren<MeshRenderer>(true);
+                for (int i = 0; i < found.Length; i++)
+                {
+                    if (found[i] != null && found[i].sharedMaterial != null
+                        && found[i].sharedMaterial.mainTexture != null)
+                    {
+                        worn = found[i];
+                        break;
+                    }
+                }
+                if (worn == null)
+                {
+                    if (!complained && oscillator != null)
+                    {
+                        complained = true;
+                        Log.Warn("no textured renderer on the block, so its note "
+                                 + "cannot be lit. It will stay black.");
+                    }
+                    return;
+                }
+            }
+
+            if (worn.sharedMaterial == paint && skin != null)
+            {
+                return;
+            }
+
+            // Reached again whenever something else has put a material on the block:
+            // a repaint, or Besiege building the visual after this block first
+            // looked. Checking rather than remembering is what makes either survive
+            // -- the old code dressed the block once and never noticed being undone.
+            if (skin == null)
+            {
+                skin = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                skin.filterMode = FilterMode.Point;
+                skin.wrapMode = TextureWrapMode.Clamp;
+                skin.hideFlags = HideFlags.HideAndDontSave;
+                inked = new Color(-1f, -1f, -1f, -1f);
+                Ink(Resting);
+            }
+
+            // Copied from whatever is on the block now, so a paint colour survives
+            // this, and only the picture underneath it is this block's own.
+            Material next = new Material(worn.sharedMaterial);
+            next.hideFlags = HideFlags.HideAndDontSave;
+            next.mainTexture = skin;
+            if (paint != null)
+            {
+                UnityEngine.Object.Destroy(paint);
+            }
+            paint = next;
+            worn.sharedMaterial = paint;
+        }
+
+        /// <summary>Repaints the one texel the note's vertices look at.</summary>
+        private void Ink(Color note)
+        {
+            if (skin == null || note == inked)
+            {
+                return;
+            }
+            skin.SetPixel(0, 0, note);   // below a half in u and v: the note
+            skin.SetPixel(1, 0, Grey);
+            skin.SetPixel(0, 1, Grey);
+            skin.SetPixel(1, 1, Grey);   // above it: the cage
+            skin.Apply();
+            inked = note;
+        }
+
+        /// <summary>The material and its texture are this block's, so they go with it.</summary>
+        private void OnDestroy()
+        {
+            if (paint != null)
+            {
+                UnityEngine.Object.Destroy(paint);
+                paint = null;
+            }
+            if (skin != null)
+            {
+                UnityEngine.Object.Destroy(skin);
+                skin = null;
+            }
         }
 
         private static void PanelOnly(params MapperType[] settings)
@@ -283,6 +407,12 @@ namespace BraidsSynth
                 // itself -- and the panel would go on drawing the last waveform.
                 playing = false;
             }
+
+            // The note lights on the same condition that opens the gate, so a key, a
+            // variable and the panel's LISTEN all light it alike. On the simulation's
+            // clone that is the gate; on the block the panel edits it is the preview.
+            Dress();
+            Ink(gateOpen || previewing ? NoteColour.Value : Resting);
         }
 
         /// <summary>

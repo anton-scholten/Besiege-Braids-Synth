@@ -2,6 +2,8 @@
 
 A macro-oscillator block, in [Besiege](https://store.steampowered.com/app/346010/Besiege/).
 
+![The synth block on a machine, its panel open on the model list and the note inside the block lit magenta](Promo_1.jpg)
+
 A port of [Braids](https://github.com/pichenettes/eurorack/tree/master/braids),
 Mutable Instruments' eurorack macro-oscillator. Not a sample player: the block
 synthesises every sample as the machine runs, so pitch and timbre can be driven
@@ -9,6 +11,9 @@ while it plays.
 
 Sixteen of Braids' models are here, and all sixteen render **sample for sample
 identically to Braids' own C++** — see [Fidelity](#fidelity).
+
+**Requires [UI Factory](https://steamcommunity.com/sharedfiles/filedetails/?id=2913469777)**
+(another Besiege mod which enables the nice UI, see workshop item `2913469777`) or the block cannot be set up.
 
 ## Install
 
@@ -21,13 +26,17 @@ Either subscribe to the mod on Steam, or if you don't use Steam you can clone th
 ```
 
 Set `BESIEGE_DIR` if your install isn't found automatically. Start Besiege, enable
-**Braids** in the mods menu, and the Synth Block appears in the block toolbar. No
-C# toolchain is needed; the build uses Besiege's own compiler.
+**Braids** in the mods menu, and the Synth Block appears in the block toolbar —
+search `synth block`, `braids` or `oscillator`. No C# toolchain is needed; the
+build uses Besiege's own compiler.
 
-[UI Factory](https://steamcommunity.com/sharedfiles/filedetails/?id=2913469777)
-is **required**. Clicking a synth block opens its panel, and that is where the
-block is set up: Besiege's own block mapper keeps only the key and the toggle,
-since it has no room to say what a control means in the model you picked.
+## The block
+
+![The block: a cage with a lit note standing inside it](BraidsSynth.jpg)
+
+A cage with a musical note standing in it. The note lights up while the block is
+sounding, in a colour off the **Note** slider on Besiege's own block mapper — so a
+machine full of them shows you which ones are playing.
 
 ## The panel
 
@@ -51,12 +60,18 @@ mapper rather than kept apart from it, so the machine saves exactly as before.
 
 ## Options
 
-Play and Toggle are on Besiege's block mapper. The rest are on the panel.
+On Besiege's block mapper:
 
 | Setting | What it does |
 | --- | --- |
 | Play | Key that opens the gate. Default `B`. Takes a variable in place of a key, like any other block's |
 | Toggle | On, the key starts and stops. Off, it plays while held |
+| Note | What colour the note inside the block lights while it sounds |
+
+On the panel:
+
+| Setting | What it does |
+| --- | --- |
 | Model | Which of the twenty-three |
 | Note | Pitch, as a MIDI note number |
 | Fine | ±100 cents against that |
@@ -85,9 +100,10 @@ the noise models, the wavetables. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Fidelity
 
-`./tools/compare-reference.sh` fetches Braids' own source, builds it, and renders
-every model through both it and this port at 96 kHz. All sixteen agree on every
-sample, over the whole range of both controls at four pitches.
+`./tools/compare-reference.sh` fetches [Braids' own source](https://github.com/pichenettes/eurorack/tree/master/braids),
+builds it, and renders every model through both it and this port at 96 kHz. All
+sixteen agree on every sample, over the whole range of both controls at four
+pitches.
 
 Two patches are applied to Braids' source to make that comparison possible, and
 neither changes what it computes: `previous_shape_` and the comb's delay line are
@@ -117,13 +133,9 @@ which sits near the rail for the rest of its cycle. On the module the output sta
 is capacitor-coupled and none of that reaches the outside world. Unity has no such
 stage, so the same high-pass goes here.
 
-The block is heard from where it is on the machine: the sound is placed in 3D, so
-it pans as the camera goes round and falls away with distance. Doppler is off —
-a machine at Besiege speeds would bend a held note by several semitones.
-
-Rendering happens in `OnAudioFilterRead`, on Unity's audio thread, so the
-behaviour hands it settings through plain volatile fields rather than touching the
-mapper from there.
+The block is heard from where it is on the machine: it pans as the camera goes
+round and falls away with distance. Doppler is off — a machine at Besiege speeds
+would bend a held note by several semitones.
 
 Details land in `Player.log` and in the in-game console with `show_logs true`.
 
@@ -131,12 +143,8 @@ AI agent? see [AGENTS.md](AGENTS.md) for layout, build, and any relevant info.
 
 ## Credits
 
-Braids is by Émilie Gillet / Mutable Instruments, MIT licensed; the notice ships
-in [BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt](BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt).
+Braids is by Émilie Gillet / [Mutable Instruments](https://github.com/pichenettes/eurorack/tree/master/braids),
+MIT licensed; the notice ships in
+[BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt](BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt).
 The panel is built from [UI Factory 3](https://gitlab.com/dagriefaa/ui-factory-3)
-by dagriefaa. Block model and texture are placeholders taken from Sound Blocks, by
-Kuroko.
-
-## Licence
-
-MIT. Besiege is Spiderling Studios'; nothing of theirs is redistributed here.
+by dagriefaa.

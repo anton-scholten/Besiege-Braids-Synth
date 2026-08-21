@@ -120,11 +120,9 @@ none of it escapes. `DcBlocker` is that capacitor. Do not "fix" the oscillator.
 
 ## Audio
 
-The AudioSource is **3D** (`spatialBlend = 1`). Unity spatialises a source's
-output *after* the `OnAudioFilterRead` components on it have run, so the callback
-writes one mono signal into every channel and the engine does the panning and the
-distance attenuation. `dopplerLevel` is 0 on purpose: Besiege machines reach
-speeds that would bend a held note by several semitones.
+The AudioSource is **2D** (`spatialBlend = 0`) and the block places itself. That
+is not an oversight, and the reasoning is long enough to have its own section --
+see *Where the sound is placed* below before changing any of it.
 
 `OnAudioFilterRead` runs on Unity's **audio thread**. Nothing in it may touch the
 mapper, the transform, or any other Unity object. The behaviour therefore hands
@@ -136,7 +134,11 @@ Every table is built on the game thread, in `SafeAwake`, so that the audio threa
 never finds itself allocating one.
 
 The AudioSource needs a clip and needs to be playing, or Unity never runs the
-filter chain at all — hence the one-sample silent clip.
+filter chain at all — hence the one-sample silent clip, which is never heard.
+
+What decides whether it is playing is one rule re-checked every frame in `Update`,
+not a `Play` or `Stop` issued from whichever callback noticed something. See *What
+Besiege does not tell a block*: most of those callbacks never arrive.
 
 The gate is ramped rather than switched. Cutting a running oscillator dead is a
 click, and Braids has no envelope of its own in this path.
@@ -147,9 +149,14 @@ A block that does not appear in the toolbar, or appears and will not attach, is
 usually `SynthBlock.xml` missing something rather than anything in the code.
 `<BasePoint>` is what a block is placed *on*; without it there is nothing to
 attach. `<Colliders>` is what the cursor and cannonballs find. `<AddingPoints>`
-are the faces other blocks attach *to*. The mesh is Sound Blocks' cube, so its
-`<Mesh>` offset and three quarter-turns are copied from that mod's own block XML
-and only make sense together with that mesh.
+are the faces other blocks attach *to*. And an XML that will not parse produces
+exactly the same symptom, silently — which is what the check in `build.sh` is for.
+
+`<Icon>` Scale is measured against the **raw** model, not multiplied by the
+`<Mesh>` scale above it: the game's own blocks are modelled at a hundred times
+size and carry `Mesh 0.01` with `Icon 0.008`, which would vanish if the two
+compounded. Change the mesh for one of a different size and the icon has to be
+re-scaled with it.
 
 ## The panel
 
@@ -283,10 +290,39 @@ models, the wavetables, the vowel synthesis. 80 KB, and the wavetable models nee
 `data/waves.bin`, which is data rather than a formula and would have to ship.
 Braids' quantizer, its AD envelope and META mode are all small and unported.
 
-The block is Special Effects' text block cage (same author) with its lettering
-dropped — `tools/` has no step for that; it was a one-off split of the OBJ's two
-connected pieces, and the provenance is in the header of
-`Resources/SynthBlock/SynthBlock.obj`. The note standing inside it is built at load
-by `NoteMesh.cs`, on the same principle as the tables: a formula rather than an
-asset. `NoteMesh.Size` is what fits it to the cage; the rest of the layout is the
-constants above it.
+`./tools/make-block-mesh.py` builds the block's mesh and texture. The note is
+*baked into the mesh*, not attached at load: Besiege renders the toolbar icon from
+the block's mesh, so anything a behaviour adds at runtime is missing from it, and
+geometry needs no material, so there is no shader to find and nothing to fail. It
+is still a formula — the constants at the top of that script are the whole note —
+and the script is what turns the formula into the shipped geometry.
+
+The block's material has to be **re-checked, not remembered**. Besiege may build
+the visual after `SafeAwake` has already looked, and a repaint replaces the
+material outright; a version of this that dressed the block once and trusted it
+left the note stubbornly black. `Dress` therefore picks the renderer whose material
+already *has* a main texture — which finds the mesh the block is really seen as,
+and settles in passing that the shader reads a picture from where this code puts
+one — and re-applies whenever it finds something else there, copying from whatever
+is on the block at that moment so a paint colour survives.
+
+The note's colour is a *texel*, not a material property, which is what lets it be
+lit while it is part of the block's mesh. Each block wears its own two-by-two
+point-sampled texture: the note's vertices all look below a half in u and v, the
+cage's unwrap sits above 0.61 in both, so `SetPixel(0, 0)` is the note and
+`SetPixel(1, 1)` is the cage with nothing in between to blur. Keep those two
+corners apart if either unwrap ever changes.
+
+The cage it stands in is Special Effects' text block (same author) with its
+lettering dropped; that split of the OBJ's two connected pieces was a one-off, and
+its result is kept as `tools/cage.obj`, which is the script's input. That frame is
+an outer skin with **no inner walls**, so from inside the block its far pillars are
+culled and it reads hollow — the script emits a reversed copy of every cage face,
+normal turned round, which makes it solid from any angle.
+
+The block's texture is generated too, by the same principle: a flat grey square
+with one black corner. The cage's unwrap only reaches into u 0.61 and v 0.63
+upwards, so the near corner is free, and every vertex of the note points at it.
+That is why the note needs no material of its own -- it shares the block's, whose
+shader is certainly one the game shipped, and black multiplied by any paint colour
+is still black.
