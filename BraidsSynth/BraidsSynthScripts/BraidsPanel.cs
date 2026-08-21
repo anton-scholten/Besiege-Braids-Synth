@@ -69,6 +69,9 @@ namespace BraidsSynth
         private Dial timbre;
         private Dial colour;
         private Dial volume;
+        private Dial attack;
+        private Dial release;
+        private Dial range;
 
         /// <summary>
         /// A row of the panel: a name, one of UI Factory's sliders, and the value
@@ -216,6 +219,9 @@ namespace BraidsSynth
             Point(timbre, block.TimbreSlider);
             Point(colour, block.ColourSlider);
             Point(volume, block.Volume);
+            Point(attack, block.Attack);
+            Point(release, block.Release);
+            Point(range, block.Range);
         }
 
         /// <summary>
@@ -553,6 +559,13 @@ namespace BraidsSynth
             colour = BuildDial("COLOR", y);
             y += RowHeight + RowGap;
             volume = BuildDial("VOLUME", y);
+            y += RowHeight + RowGap;
+            attack = BuildDial("ATTACK", y);
+            y += RowHeight + RowGap;
+            release = BuildDial("RELEASE", y);
+            y += RowHeight + RowGap;
+            range = BuildDial("RANGE", y);
+            range.Step = 1f;
             return y + RowHeight + Margin;
         }
 
@@ -712,7 +725,7 @@ namespace BraidsSynth
 
             // A simulation owns the block: the key gates it, the panel does not, and
             // Besiege's own mapper steps aside too rather than floating over the run.
-            if (block.IsSimulating)
+            if (StatMaster.levelSimulating)
             {
                 Hide();
                 return;
@@ -818,6 +831,9 @@ namespace BraidsSynth
             ShowDial(timbre);
             ShowDial(colour);
             ShowDial(volume);
+            ShowDial(attack);
+            ShowDial(release);
+            ShowDial(range);
             ShowPreview();
         }
 
@@ -906,8 +922,9 @@ namespace BraidsSynth
 
         /// <summary>
         /// How a dial's value reads. A note is worth writing as a note -- 60 means
-        /// nothing and C4 means a great deal -- and TIMBRE and COLOR have no unit at
-        /// all, so they are per cent.
+        /// nothing and C4 means a great deal -- times are worth writing in the unit
+        /// they are on the scale of, and TIMBRE and COLOR have no unit at all, so
+        /// they are per cent.
         /// </summary>
         private string Written(Dial dial, float value)
         {
@@ -920,6 +937,20 @@ namespace BraidsSynth
             {
                 int cents = Mathf.RoundToInt(value);
                 return (cents > 0 ? "+" : "") + cents + " cents";
+            }
+            if (dial == attack || dial == release)
+            {
+                // A gate is set in milliseconds and a swell in seconds; writing both
+                // the same way makes one of them unreadable.
+                if (value < 1f)
+                {
+                    return Mathf.RoundToInt(value * 1000f) + " ms";
+                }
+                return value.ToString("0.00") + " s";
+            }
+            if (dial == range)
+            {
+                return Mathf.RoundToInt(value) + " m";
             }
             if (dial == volume)
             {

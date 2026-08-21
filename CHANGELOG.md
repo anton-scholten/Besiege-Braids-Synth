@@ -31,8 +31,49 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
 - NOTE snaps to whole semitones on the panel, since a note a quarter-semitone
   sharp cannot be played in a tune -- FINE is what the in-between is for.
 
+- **The panel is where the block is set up.** ATTACK, RELEASE and a new RANGE join
+  the dials, and everything but the key and the toggle is hidden from Besiege's
+  block mapper — which has no room to say what TIMBRE means in the model you
+  picked, and that is the whole difficulty of a macro-oscillator. They are still
+  mapper settings and still saved with the machine; only their display is off. This
+  makes UI Factory a hard dependency rather than a soft one.
+- **RANGE**, in metres: the radius the block is at full volume within, with the
+  1/distance falloff scaled to match, so one dial covers both how loud a block is
+  and how far away it can still be heard.
+
 **Fixed along the way**
 
+- The block was heard at the same volume from everywhere, dead centre, however the
+  camera moved -- in a simulation and under LISTEN alike. The oscillator writes its
+  samples from `OnAudioFilterRead`, and a filter added that way runs *after* the
+  AudioSource's 3D stage: the panner and the distance rolloff had already been
+  applied to the one sample of silence the source plays, and the filter then
+  overwrote the result. Feeding the samples in earlier, through a streaming clip,
+  does get them panned -- but a streamed clip is read well ahead of being heard, so
+  the note no longer starts when the key does. The block places itself instead: the
+  source is 2D, and the filter applies a distance and pan gain worked out each frame
+  from where the block stands relative to the listener, slid across the block so a
+  turning camera is not heard as a staircase.
+- After a simulation, LISTEN made no sound and could not be made to. The block was
+  relying on three things that turn out not to hold. Besiege runs a simulation on a
+  *clone* of the machine, so `OnSimulateStart` and `OnSimulateStop` never reach the
+  block the panel edits -- the code that cleared the preview flag "when the run
+  started" was running on a different object. That block's own `IsSimulating` is
+  false even mid-run, because `BasicInfo::UpdateSimState` answers false for anything
+  flagged `isBuildBlock`. And `BuildingUpdate`, where the preview did its per-frame
+  work, is declared on `ModBlockBehaviour` and called from nowhere in the game. So
+  the run hid the build machine, Unity stopped the deactivated object's AudioSource,
+  and the block came back with its preview flag still set and its source stopped:
+  the panel read the flag and drew LISTENING, nothing sounded, and pressing the
+  button turned the preview off -- the one thing that could not help. There is now
+  one rule, in Unity's own `Update`: the source plays while a run is on or the panel
+  is auditioning, and is stopped otherwise. It is re-checked every frame instead of
+  being switched from callbacks that may never arrive, and it reads the global
+  `StatMaster.levelSimulating`, which is the only simulation signal that reaches
+  this object.
+- The panel kept drawing the last waveform it saw after a simulation ended. Nothing
+  cleared the flag the scope reads once the source stopped and the audio callback
+  went quiet.
 - Settings changed on the panel were heard by LISTEN and ignored by a simulation.
   A mapper setting is stored twice -- a live value and the value a block is loaded
   from -- and assigning `MapperType.Value` writes only the first, while a

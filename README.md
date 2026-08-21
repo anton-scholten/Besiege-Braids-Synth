@@ -25,8 +25,9 @@ Set `BESIEGE_DIR` if your install isn't found automatically. Start Besiege, enab
 C# toolchain is needed; the build uses Besiege's own compiler.
 
 [UI Factory](https://steamcommunity.com/sharedfiles/filedetails/?id=2913469777)
-is optional. With it, clicking a synth block opens a panel; without it the block
-uses Besiege's ordinary block mapper and everything still works.
+is **required**. Clicking a synth block opens its panel, and that is where the
+block is set up: Besiege's own block mapper keeps only the key and the toggle,
+since it has no room to say what a control means in the model you picked.
 
 ## The panel
 
@@ -40,24 +41,29 @@ Clicking a synth block opens it, and closing the block's settings closes it agai
   they never mean the same thing twice.
 - **LISTEN**, which sounds the block while the machine is still being built, so a
   model can be chosen by ear rather than by name.
+- **Every dial**: NOTE and FINE, TIMBRE and COLOR, VOLUME, ATTACK and RELEASE, and
+  RANGE.
 
-Everything on the panel is the block's own settings; the machine saves through the
-mapper either way.
+Everything on the panel is one of the block's own mapper settings, hidden from the
+mapper rather than kept apart from it, so the machine saves exactly as before.
 
 ## Options
+
+Play and Toggle are on Besiege's block mapper. The rest are on the panel.
 
 | Setting | What it does |
 | --- | --- |
 | Play | Key that opens the gate. Default `B` |
+| Toggle | On, the key starts and stops. Off, it plays while held |
 | Model | Which of the twenty-three |
 | Note | Pitch, as a MIDI note number |
 | Fine | ±100 cents against that |
 | Timbre | Braids' TIMBRE. Means whatever the model decides |
 | Color | Braids' COLOR, likewise |
-| Volume | 0 to 1. The block is heard from where it is, so distance counts too |
+| Volume | 0 to 1 |
 | Attack | How long the gate takes to open, in seconds |
 | Release | And to close |
-| Toggle | On, the key starts and stops. Off, it plays while held |
+| Range | How far the block carries, in metres. Full volume within it, then falling away as 1/distance — so turning it up makes the block louder at any distance as well as audible from further off |
 
 ## Models
 

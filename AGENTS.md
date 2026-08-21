@@ -198,6 +198,55 @@ is the one an unqualified `Slider` binds to. Write `UnityEngine.UI.Slider` in
 full. Same for `Scrollbar`, `LOD` and `Particle`, and fully qualify every
 `Modding` type — the bundled mod.io SDK's global `ModIO` shadows `Modding.ModIO`.
 
+## What Besiege does not tell a block
+
+Four things about the block lifecycle, all found by disassembling
+`Assembly-CSharp`, all of which cost a wrong fix first.
+
+**A simulation runs on a clone.** `Machine::StartPhysics` builds a
+`simulationClone` and `DestroySimMachine` tears it down. `OnSimulateStart`,
+`OnSimulateStop` and `SimulateUpdateAlways` arrive on the clone's blocks — never
+on the block the block mapper and the panel are editing. Anything a *building*
+block has to know about a run has to come from somewhere else.
+
+**`IsSimulating` is false on a building block, even mid-run.** It reads
+`handler.isSimulating`, which only `BasicInfo::UpdateSimState` writes, and that
+answers `false` outright for anything flagged `isBuildBlock`. It is also computed
+on `Awake`, `OnEnable` and a parent-machine change, and at no other time — so it
+is a cached per-block value, not a live global. `StatMaster.levelSimulating` is
+the global flag, public and static.
+
+**`BuildingUpdate` is never called.** It is declared on `ModBlockBehaviour` and
+there is not one call to it anywhere in `Assembly-CSharp`. Code put there does
+not run. Use Unity's own `Update` — `ModBlockBehaviour` and
+`BlockModuleBehaviour<T>` declare no `Update`, `OnEnable`, `OnDisable` or
+`OnDestroy`, so all four are free to implement and hide nothing.
+
+**The build machine is hidden for the run**, which deactivates the object and
+stops any AudioSource on it without telling the component. State a block was
+holding across that — a preview flag, a "still playing" flag — comes back stale.
+
+The moral for the synth block: it does not try to be told, it reconciles. The
+AudioSource is brought into line with the wanted state every frame from `Update`,
+rather than being started and stopped from whichever callback happened to fire.
+
+## Where the sound is placed
+
+`OnAudioFilterRead` runs *after* the AudioSource's 3D stage, so a filter that
+writes the whole buffer throws away everything the panner and the rolloff did --
+which is why the block used to be heard at one volume, dead centre, from
+anywhere. The obvious repair is to feed the samples in earlier, as a streaming
+`AudioClip` with a PCM reader callback, and that does get them panned. It also
+costs the stream's read-ahead: the callback runs well before those samples are
+heard, so the gate opens into audio that was generated with it shut, and the note
+arrives late. **Do not go back to it.**
+
+So the source is 2D and the block places itself: `Place` works out a distance and
+pan gain each frame on the game thread, and the filter slides onto it across the
+block. Keep the placement on the game thread -- a transform must not be read from
+the audio thread -- and keep re-finding the `AudioListener`, because Besiege swaps
+cameras between building and running and the held one goes stale rather than null.
+
 ## Next
 
 `digital_oscillator.cc` is what is left: FM, the physical models, the noise

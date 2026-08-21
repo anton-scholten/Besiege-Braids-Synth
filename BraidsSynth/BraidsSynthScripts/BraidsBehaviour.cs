@@ -9,10 +9,9 @@ namespace BraidsSynth
     /// The synth block: maps the block's settings onto Braids' macro-oscillator and
     /// renders it straight into Unity's audio stream.
     ///
-    /// Braids has three controls and this keeps their meaning: a MODEL, a coarse
-    /// pitch, and TIMBRE and COLOR, which mean whatever the chosen model decides
-    /// they mean. What the module does *not* have is Braids' front panel, so the
-    /// note comes from a slider and a key gates it.
+    /// Braids' controls keep their meaning here -- a MODEL, a pitch, and TIMBRE and
+    /// COLOR, which mean whatever the model decides. What the module has and this
+    /// does not is a front panel, so the note comes from a slider and a key gates it.
     ///
     /// Everything the mapper offers is also on the UI Factory panel, which is a soft
     /// dependency -- see <see cref="BraidsPanel"/>. The mapper is what the block
@@ -23,6 +22,12 @@ namespace BraidsSynth
         /// <summary>How many samples the panel's scope can draw. A power of two.</summary>
         public const int ScopeSize = 1024;
 
+        /// <summary>
+        /// How much further than RANGE the sound carries before it is cut off. At
+        /// 1/d that is 35 dB down, so the cut lands where there was nothing to hear.
+        /// </summary>
+        private const float FalloffSpan = 60f;
+
         private MKey PlayKey;
         private MMenu ModelMenu;
         private MSlider PitchSlider;
@@ -32,28 +37,27 @@ namespace BraidsSynth
         private MSlider VolumeSlider;
         private MSlider AttackSlider;
         private MSlider ReleaseSlider;
+        private MSlider RangeSlider;
         private MToggle PushToggle;
 
         /// <summary>
-        /// The clip every synth block's AudioSource plays.
-        ///
-        /// It is never heard -- OnAudioFilterRead overwrites the stream -- but the
-        /// source has to have a clip and be playing or Unity does not run the filter
-        /// chain at all. One sample of silence, looped, is the cheapest way to keep
-        /// it running, and one clip is shared: a clip per block is a Unity object per
-        /// block that nothing destroys when the block goes.
+        /// What every synth block's AudioSource plays. Never heard -- the filter
+        /// overwrites the stream -- but a source has to be playing or Unity does not
+        /// run the filter chain at all. One sample of silence, looped, shared by all.
         /// </summary>
         private static AudioClip silence;
 
         private AudioSource source;
+        private AudioListener ear;
         private MacroOscillator oscillator;
         private DcBlocker blocker;
         private int rate;
 
         // Written by the game thread, read by the audio thread. Plain fields of
-        // primitive type: torn reads would cost one block of slightly wrong
-        // timbre, which is not worth a lock on the audio callback.
+        // primitive type: a torn read costs one block of slightly wrong timbre,
+        // which is not worth a lock on the audio callback.
         private volatile bool gateOpen;
+        private volatile bool previewing;
         private volatile int wantModel;
         private volatile int wantPitch;
         private volatile int wantTimbre;
@@ -61,22 +65,20 @@ namespace BraidsSynth
         private volatile float wantVolume;
         private volatile float attackPerSample;
         private volatile float releasePerSample;
+        private volatile float wantLeft = 1f;
+        private volatile float wantRight = 1f;
 
         private short[] block;
         private float level;
+        private float heldLeft = 1f;
+        private float heldRight = 1f;
         private bool playing;
 
         // The scope's ring buffer. Filled on the audio thread and read on the game
-        // thread without a lock: the worst a torn read costs is one frame of a
-        // picture, and the picture is redrawn several times a second.
+        // thread without a lock: a torn read costs one frame of a picture that is
+        // redrawn several times a second.
         private readonly float[] scope = new float[ScopeSize];
         private volatile int scopeWrite;
-
-        /// <summary>
-        /// Set by the panel to make the block sound while the machine is being
-        /// built, so a model can be chosen by ear rather than by name.
-        /// </summary>
-        private volatile bool previewing;
 
         public override void SafeAwake()
         {
@@ -90,16 +92,31 @@ namespace BraidsSynth
             VolumeSlider = AddSlider("Volume", "VolumeKey", 0.5f, 0f, 1f);
             AttackSlider = AddSlider("Attack", "AttackKey", 0.01f, 0f, 2f);
             ReleaseSlider = AddSlider("Release", "ReleaseKey", 0.05f, 0f, 4f);
+            RangeSlider = AddSlider("Range", "RangeKey", 8f, 1f, 100f);
             PushToggle = AddToggle("Toggle", "ToggleKey", false);
+
+            // Everything but the key and the toggle belongs to the panel, which has
+            // room to say what each control means. They stay mapper settings, so the
+            // machine still saves them: DisplayInMapper is read by the mapper's own
+            // controllers and by nothing in the serialiser.
+            PanelOnly(ModelMenu, PitchSlider, FineSlider, Timbre, Colour,
+                      VolumeSlider, AttackSlider, ReleaseSlider, RangeSlider);
 
             rate = AudioSettings.outputSampleRate;
             if (rate <= 0)
             {
                 rate = BraidsResources.NativeSampleRate;
             }
-            // Builds every table the oscillator will read, on the game thread, so
-            // the audio thread never allocates one under itself.
+            // Every table the oscillator reads, built on the game thread so the audio
+            // thread never allocates one under itself.
             BraidsResources.Prepare(rate);
+
+            oscillator = new MacroOscillator(rate);
+            blocker = new DcBlocker(rate);
+            // Sized for the largest buffer Unity will ask for; growing it on the audio
+            // thread would be a collection under a running note.
+            block = new short[4096];
+            PushSettings();
 
             source = GetComponent<AudioSource>();
             if (source == null)
@@ -109,28 +126,20 @@ namespace BraidsSynth
             source.clip = Silence(rate);
             source.loop = true;
             source.playOnAwake = false;
+            // 2D, because the block places itself -- see Place. Unity's own 3D stage
+            // runs *before* this component's filter, so it would only ever pan the
+            // silence above; and feeding the samples in earlier, through a streaming
+            // clip, buys the panning back at the cost of that clip's read-ahead,
+            // which is a note that arrives late.
+            source.spatialBlend = 0f;
+        }
 
-            // The block is a thing in the world, so it is heard from where it is:
-            // panned as the camera moves round the machine, and quieter from further
-            // off. Unity spatialises the source's output after this component's
-            // filter has produced it, so the callback goes on writing one mono
-            // signal into every channel and the engine does the placing.
-            source.spatialBlend = 1f;
-            source.rolloffMode = AudioRolloffMode.Logarithmic;
-            // Full volume anywhere on a machine of ordinary size, then falling away.
-            source.minDistance = 8f;
-            source.maxDistance = 500f;
-            // No Doppler. Besiege machines reach speeds that would bend a held note
-            // by several semitones, and a synth block is played for its pitch.
-            source.dopplerLevel = 0f;
-
-            oscillator = new MacroOscillator(rate);
-            blocker = new DcBlocker(rate);
-            // Sized for the largest DSP buffer Unity offers, so the audio thread
-            // never has to grow it -- an allocation there is a collection under a
-            // running note. The check in the callback stays as a backstop.
-            block = new short[4096];
-            PushSettings();
+        private static void PanelOnly(params MapperType[] settings)
+        {
+            for (int i = 0; i < settings.Length; i++)
+            {
+                settings[i].DisplayInMapper = false;
+            }
         }
 
         private static AudioClip Silence(int rate)
@@ -138,8 +147,8 @@ namespace BraidsSynth
             if (silence == null)
             {
                 silence = AudioClip.Create("BraidsSilence", 1, 1, rate, false);
-                // Kept out of the scene and out of UnloadUnusedAssets' reach, since
-                // the only thing referencing it is this static field.
+                // Out of the scene and out of UnloadUnusedAssets' reach, since the
+                // only thing referencing it is this static field.
                 silence.hideFlags = HideFlags.HideAndDontSave;
             }
             return silence;
@@ -155,46 +164,32 @@ namespace BraidsSynth
         public MSlider Volume { get { return VolumeSlider; } }
         public MSlider Attack { get { return AttackSlider; } }
         public MSlider Release { get { return ReleaseSlider; } }
+        public MSlider Range { get { return RangeSlider; } }
 
         /// <summary>True while the block is making a sound.</summary>
         public bool IsPlaying { get { return playing; } }
 
+        public bool IsPreviewing { get { return previewing; } }
+
         /// <summary>
-        /// Makes the block sound outside a simulation, for auditioning a model while
-        /// the machine is being built. Turning it off stops the source rather than
-        /// leaving a silent filter chain running on every synth block in the machine.
+        /// The panel's LISTEN, for choosing a model by ear while the machine is being
+        /// built. It only records the wish; <see cref="Update"/> acts on it.
         /// </summary>
         public void SetPreview(bool on)
         {
-            // Never during a simulation: the key is what opens the gate there.
-            if (on && IsSimulating)
+            if (on == previewing)
             {
                 return;
             }
-            if (previewing == on)
-            {
-                return;
-            }
-            previewing = on;
-            if (IsSimulating || source == null)
-            {
-                return;
-            }
-            if (on)
+            // A run owns the gate, so LISTEN does not start one there.
+            previewing = on && !StatMaster.levelSimulating;
+            if (previewing)
             {
                 level = 0f;
                 blocker.Reset();
                 PushSettings();
-                source.Play();
-            }
-            else
-            {
-                source.Stop();
-                playing = false;
             }
         }
-
-        public bool IsPreviewing { get { return previewing; } }
 
         /// <summary>
         /// Copies the scope's ring buffer out in order, oldest first. Returns how
@@ -216,58 +211,119 @@ namespace BraidsSynth
 
         // ---- the game thread ---------------------------------------------------
 
+        /// <summary>
+        /// The one rule: the source plays while a run is on or the panel is
+        /// auditioning, and is stopped otherwise. Checked every frame rather than
+        /// switched from the callbacks that change it, because most of those never
+        /// reach this object -- Besiege runs a simulation on a *clone* of the machine,
+        /// so OnSimulateStart and OnSimulateStop land elsewhere and this block's own
+        /// IsSimulating stays false throughout; and BuildingUpdate, the hook meant for
+        /// this, is never called by the game at all. A rule that is re-checked cannot
+        /// be left on the wrong side of an event that went missing.
+        ///
+        /// Unity's own Update, for the same reason.
+        /// </summary>
+        private void Update()
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            // The global flag is the only simulation signal that gets here.
+            bool simulating = StatMaster.levelSimulating;
+            if (simulating)
+            {
+                previewing = false;
+            }
+            else if (previewing)
+            {
+                // So the panel's dials are heard as they move.
+                PushSettings();
+            }
+
+            bool wanted = previewing || simulating;
+            if (wanted != source.isPlaying)
+            {
+                if (wanted) { source.Play(); }
+                else { source.Stop(); }
+            }
+            if (wanted)
+            {
+                Place();
+            }
+            else
+            {
+                // Nothing is driving the audio callback now, so it cannot clear this
+                // itself -- and the panel would go on drawing the last waveform.
+                playing = false;
+            }
+        }
+
+        /// <summary>
+        /// Works out how loud the block is in each ear, from where it stands relative
+        /// to the listener. This is Unity's job normally, but its 3D stage runs before
+        /// the filter that produces the sound, so the block does its own: 1/d past
+        /// RANGE, and panned by how far round the listener it sits.
+        ///
+        /// Game thread only -- a transform may not be touched from the audio thread.
+        /// </summary>
+        private void Place()
+        {
+            if (ear == null || !ear.isActiveAndEnabled)
+            {
+                // Besiege swaps cameras between building and running, and the
+                // listener goes with them, so a held one goes stale rather than null.
+                ear = (AudioListener)UnityEngine.Object.FindObjectOfType(typeof(AudioListener));
+                if (ear == null)
+                {
+                    wantLeft = 1f;
+                    wantRight = 1f;
+                    return;
+                }
+            }
+
+            Transform head = ear.transform;
+            Vector3 delta = transform.position - head.position;
+            float distance = delta.magnitude;
+
+            // RANGE is the radius the block is at full volume within; past it the
+            // 1/d falloff and the cutoff both scale with it, so turning it up makes
+            // the block louder at any distance as well as audible from further off.
+            float near = RangeSlider.Value;
+            if (near < 0.1f) { near = 0.1f; }
+            float far = near * FalloffSpan;
+
+            float gain;
+            if (distance <= near) { gain = 1f; }
+            else if (distance >= far) { gain = 0f; }
+            else { gain = near / distance; }
+
+            // -1 hard left, +1 hard right. Each ear keeps full gain until the block
+            // crosses to the other side, so a block straight ahead is as loud as it
+            // was before any of this.
+            float pan = 0f;
+            if (distance > 0.001f)
+            {
+                pan = Vector3.Dot(head.right, delta / distance);
+            }
+            wantLeft = gain * Mathf.Min(1f, 1f - pan);
+            wantRight = gain * Mathf.Min(1f, 1f + pan);
+        }
+
+        /// <summary>Runs on the simulation's clone of the block, not on the panel's.</summary>
         public override void OnSimulateStart()
         {
-            // The simulation owns the gate. Preview is a build-mode convenience, and
-            // leaving it set here is a block that drones through the whole run and
-            // ignores its key -- which is what happens to any block auditioned with
-            // the panel's LISTEN and then simulated, since nothing else is
-            // guaranteed to clear it first.
-            previewing = false;
             gateOpen = false;
-            playing = false;
             level = 0f;
             oscillator.Init();
             blocker.Reset();
             PushSettings();
-            source.Play();
         }
 
         public override void OnSimulateStop()
         {
             gateOpen = false;
-            source.Stop();
-        }
-
-        /// <summary>Hands the block's current settings to the audio thread.</summary>
-        private void PushSettings()
-        {
-            wantModel = ModelMenu.Value;
-            // Braids counts pitch in 1/128ths of a semitone; the fine control is in
-            // cents, which is 1/100th of the same semitone.
-            wantPitch = Mathf.RoundToInt(PitchSlider.Value * 128f
-                                         + FineSlider.Value * 1.28f);
-            wantTimbre = Mathf.RoundToInt(Timbre.Value * 32767f);
-            wantColour = Mathf.RoundToInt(Colour.Value * 32767f);
-            wantVolume = VolumeSlider.Value;
-            attackPerSample = RampRate(AttackSlider.Value);
-            releasePerSample = RampRate(ReleaseSlider.Value);
-        }
-
-        /// <summary>
-        /// How far the gate moves per sample to cross its whole travel in
-        /// <paramref name="seconds"/>. Zero seconds still takes a couple of
-        /// milliseconds: a gate that switches is a click, which is the one thing a
-        /// ramp is here to avoid.
-        /// </summary>
-        private float RampRate(float seconds)
-        {
-            float shortest = 0.002f;
-            if (seconds < shortest)
-            {
-                seconds = shortest;
-            }
-            return 1f / (seconds * rate);
         }
 
         public override void SimulateUpdateAlways()
@@ -284,26 +340,46 @@ namespace BraidsSynth
             }
         }
 
-        /// <summary>
-        /// Keeps the preview following the panel while the machine is being built.
-        /// Nothing here runs during a simulation.
-        /// </summary>
-        public override void BuildingUpdate()
+        /// <summary>Hands the block's current settings to the audio thread.</summary>
+        private void PushSettings()
         {
-            if (previewing)
-            {
-                PushSettings();
-            }
+            wantModel = ModelMenu.Value;
+            // Braids counts pitch in 1/128ths of a semitone; FINE is in cents, which
+            // is 1/100th of the same semitone.
+            wantPitch = Mathf.RoundToInt(PitchSlider.Value * 128f
+                                         + FineSlider.Value * 1.28f);
+            wantTimbre = Mathf.RoundToInt(Timbre.Value * 32767f);
+            wantColour = Mathf.RoundToInt(Colour.Value * 32767f);
+            wantVolume = VolumeSlider.Value;
+            attackPerSample = RampRate(AttackSlider.Value);
+            releasePerSample = RampRate(ReleaseSlider.Value);
         }
+
+        /// <summary>
+        /// How far the gate moves per sample to cross its whole travel in
+        /// <paramref name="seconds"/>. Zero still takes a couple of milliseconds: a
+        /// gate that switches is a click, which is what a ramp is here to avoid.
+        /// </summary>
+        private float RampRate(float seconds)
+        {
+            float shortest = 0.002f;
+            if (seconds < shortest)
+            {
+                seconds = shortest;
+            }
+            return 1f / (seconds * rate);
+        }
+
+        // ---- the audio thread ---------------------------------------------------
 
         /// <summary>
         /// Runs on Unity's audio thread, not the game thread: nothing here may touch
         /// the mapper, the transform, or anything else Unity guards.
         ///
-        /// Braids renders int16 at its own rate; the tables were built for Unity's
-        /// rate, so a block of samples comes straight out at the right pitch with no
-        /// resampling. The gate is ramped rather than switched, because cutting a
-        /// running oscillator dead is a click.
+        /// A filter, so the samples are produced where they are about to be played and
+        /// the note starts when the key does. Braids renders int16, and the tables
+        /// were built for Unity's rate, so a block of samples comes out at the right
+        /// pitch with no resampling.
         /// </summary>
         private void OnAudioFilterRead(float[] data, int channels)
         {
@@ -327,6 +403,7 @@ namespace BraidsSynth
             float target = open ? wantVolume : 0f;
             if (!open && level <= 0.0001f)
             {
+                // The stream is the silent clip's, so leaving it is silence.
                 playing = false;
                 level = 0f;
                 return;
@@ -334,6 +411,15 @@ namespace BraidsSynth
             playing = true;
 
             oscillator.Render(null, block, frames);
+
+            // The placement is a frame old and moves in steps; slide onto it across
+            // the block, or a turning camera is heard as a staircase.
+            float leftTo = wantLeft;
+            float rightTo = wantRight;
+            float left = heldLeft;
+            float right = heldRight;
+            float leftStep = (leftTo - left) / frames;
+            float rightStep = (rightTo - right) / frames;
 
             float step = target > level ? attackPerSample : releasePerSample;
             int write = scopeWrite;
@@ -350,9 +436,9 @@ namespace BraidsSynth
                     if (level < target) { level = target; }
                 }
 
-                // The DC blocker stands in for the module's output capacitor, and
-                // has to run whether the gate is open or not: it is the offset it
-                // removes that would otherwise step the speaker as the gate moves.
+                // The DC blocker stands in for the module's output capacitor, and runs
+                // whether the gate is open or not: it is the offset it removes that
+                // would otherwise step the speaker as the gate moves.
                 float s = blocker.Process(block[i] * (1f / 32768f)) * level;
                 if (s > 1f) { s = 1f; }
                 else if (s < -1f) { s = -1f; }
@@ -360,12 +446,28 @@ namespace BraidsSynth
                 scope[write] = s;
                 write = (write + 1) & (ScopeSize - 1);
 
-                for (int c = 0; c < channels; c++)
+                left += leftStep;
+                right += rightStep;
+
+                int at = i * channels;
+                float both = s * (left + right) * 0.5f;
+                if (channels == 1)
                 {
-                    data[i * channels + c] = s;
+                    data[at] = both;
+                }
+                else
+                {
+                    data[at] = s * left;
+                    data[at + 1] = s * right;
+                    for (int c = 2; c < channels; c++)
+                    {
+                        data[at + c] = both;
+                    }
                 }
             }
             scopeWrite = write;
+            heldLeft = leftTo;
+            heldRight = rightTo;
         }
     }
 }
