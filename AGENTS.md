@@ -45,6 +45,13 @@ declaration segfaults it**. Braids is enum-heavy, so every shape constant is a
 somewhere in these files", not necessarily "there is an enum"; bisect by
 commenting out the newest block.
 
+`build.sh` also parses every XML the mod ships, because **an XML comment may not
+contain two hyphens in a row** and Besiege says nothing when one does: the block
+is just missing from the toolbar, which looks like a mod that failed to load, a
+module that threw, or a mesh it could not find. A dash written in prose inside a
+comment is all it takes. `tools/tests/XmlCheck.cs` is what stops that reaching the
+game.
+
 `build.sh` also runs the blacklist check. The mod loader refuses assemblies that
 reference forbidden namespaces, and it scans field types, method locals and IL
 operands — but never custom attributes, which is why `[XmlRoot]` is fine.
@@ -276,4 +283,10 @@ models, the wavetables, the vowel synthesis. 80 KB, and the wavetable models nee
 `data/waves.bin`, which is data rather than a formula and would have to ship.
 Braids' quantizer, its AD envelope and META mode are all small and unported.
 
-The block still wears Sound Blocks' mesh and texture.
+The block is Special Effects' text block cage (same author) with its lettering
+dropped — `tools/` has no step for that; it was a one-off split of the OBJ's two
+connected pieces, and the provenance is in the header of
+`Resources/SynthBlock/SynthBlock.obj`. The note standing inside it is built at load
+by `NoteMesh.cs`, on the same principle as the tables: a formula rather than an
+asset. `NoteMesh.Size` is what fits it to the cage; the rest of the layout is the
+constants above it.

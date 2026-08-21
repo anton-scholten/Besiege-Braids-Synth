@@ -59,7 +59,20 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   menus have no part in them — so hiding the rest of the settings from the mapper
   costs nothing here.
 
+- **A block of its own to look at.** The model is Special Effects' text block cage
+  with its lettering stripped out, and standing inside it is a pair of beamed
+  semiquavers. The note is built at load rather than shipped — two tilted ellipses,
+  two stems and two slanted beams, extruded — so the mod still carries no geometry
+  it did not compute, and the shape is a handful of constants to adjust rather than
+  a mesh to re-export.
+
 **Fixed along the way**
+
+- The block disappeared from the toolbar entirely. A comment in `SynthBlock.xml`
+  had a dash written as two hyphens, which XML does not allow inside a comment, so
+  the file stopped parsing and Besiege dropped the block without a word about it.
+  `./tools/build.sh` now parses every XML the mod ships and refuses the build
+  rather than letting it look like it worked.
 
 - RELEASE was not heard under LISTEN, though it was in a run. The source was kept
   up for exactly as long as the gate was open, so turning LISTEN off stopped it in
@@ -130,7 +143,7 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   own project. The three shapes that need nothing shipped -- ring mod, swarm and
   comb -- are already here.
 - Braids' quantizer, its AD envelope and its META mode.
-- A block model of its own. The mesh and texture are Sound Blocks' for now.
+- A texture of its own. The cage carries Special Effects' text block texture.
 
 **If you built a machine against an earlier working copy**, the Shape setting is
 now a Model setting over a longer list in a different order, so a saved synth

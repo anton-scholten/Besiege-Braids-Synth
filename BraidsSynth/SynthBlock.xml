@@ -18,23 +18,29 @@
 		<BraidsSynth modid="89025196-4dcd-4213-b839-2f95cd35a942" />
 	</Modules>
 
-	<!-- Mesh, texture and their placement are Sound Blocks' cube, which is
-	     modelled around the origin rather than around its base point, hence the
-	     offset and the three quarter turns. -->
+	<!-- The Special Effects text block's cage, with its lettering stripped out so
+	     that what stands inside it is the note NoteMesh builds. Modelled around the
+	     origin over a span of two, hence the half scale and the lift onto the base
+	     point. -->
 	<Mesh name="SynthBlock_mesh">
-		<Position x="0.45" y="-0.45" z="0.0" />
-		<Rotation x="-90.0" y="-90.0" z="-90.0" />
-		<Scale x="1" y="1" z="1" />
+		<Position x="0.0" y="0.0" z="0.5" />
+		<Rotation x="0.0" y="0.0" z="0.0" />
+		<Scale x="0.5" y="0.5" z="0.5" />
 	</Mesh>
 
 	<Texture name="SynthBlock_texture" />
 
-	<!-- How the block is posed for its toolbar thumbnail: pulled back off the
-	     camera and turned so two faces are lit. -->
+	<!-- How the block is posed for its toolbar thumbnail. Icon Scale is measured
+	     against the *raw* model, not against the Mesh scale above: the game's own
+	     blocks are modelled at a hundred times size and carry Mesh 0.01 with
+	     Icon 0.008, which would vanish if the two multiplied. This cage spans two
+	     units where the old mesh spanned nine tenths, so the scale it used to have
+	     drew the block more than twice too large. These are the text block's own
+	     numbers, for what is now the text block's own mesh. -->
 	<Icon>
-		<Position x="-0.15" y="-0.35" z="-1.5" />
-		<Rotation x="-30.0" y="-30.0" z="0.0" />
-		<Scale x="0.5" y="0.5" z="0.5" />
+		<Position x="0.0" y="0.0" z="-1.0" />
+		<Rotation x="-20.0" y="45.0" z="0.0" />
+		<Scale x="0.25" y="0.25" z="0.25" />
 	</Icon>
 
 	<FireInteraction burnDuration="5" igniteOnStart="false">

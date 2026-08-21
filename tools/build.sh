@@ -116,6 +116,30 @@ if pgrep -x Besiege >/dev/null 2>&1 || pgrep -f 'Besiege\.x86' >/dev/null 2>&1; 
     echo "      game will not pick up the new assembly until you restart it."
 fi
 
+# Besiege does not report an XML it cannot parse: the block is simply not in the
+# toolbar, which looks like a dozen other faults. Catch it here, before the build
+# has a chance to look like it worked.
+XMLCHECK="$BUILD_DIR/xmlcheck.exe"
+if [[ ! -f "$XMLCHECK" || "$REPO_DIR/tools/tests/XmlCheck.cs" -nt "$XMLCHECK" ]]; then
+    "$HOST" -target:exe -out:"$XMLCHECK" -lib:"$MANAGED" -r:System.dll -r:System.Xml.dll \
+        "$REPO_DIR/tools/tests/XmlCheck.cs" >/dev/null 2>&1
+fi
+if [[ -f "$XMLCHECK" ]]; then
+    set +e
+    TARGET_ASM="$XMLCHECK" "$BUILD_DIR/monohost" "$REPO_DIR/BraidsSynth"/*.xml
+    xml_rc=$?
+    set -e
+    if [[ $xml_rc -ne 0 ]]; then
+        echo >&2
+        echo >&2 "That will not parse, so Besiege will not show the block at all."
+        echo >&2 "An XML comment may not contain two hyphens in a row; that is the"
+        echo >&2 "usual cause, and prose written with a dash produces it easily."
+        exit 1
+    fi
+else
+    echo "(xml checker unavailable; skipping that check)" >&2
+fi
+
 # System.Xml is referenced for the [Xml*] attributes on the block module. That
 # is not a blacklist violation: the loader's AssemblyScanner walks field types,
 # locals and IL operands, and never enumerates custom attributes -- and the

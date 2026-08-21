@@ -74,6 +74,12 @@ namespace BraidsSynth
         private float heldRight = 1f;
         private bool playing;
 
+        // The emulated half of the key, filled in by Besiege's own emulation pass
+        // and consumed by the next SimulateUpdateAlways. The edges are latched
+        // rather than read live, because the two run at different rates.
+        private bool emulatedPressPending;
+        private bool emulatedDown;
+
         // The scope's ring buffer. Filled on the audio thread and read on the game
         // thread without a lock: a torn read costs one frame of a picture that is
         // redrawn several times a second.
@@ -121,6 +127,10 @@ namespace BraidsSynth
             // thread would be a collection under a running note.
             block = new short[4096];
             PushSettings();
+
+            // The block is a cage with a note standing in it; the note is built
+            // rather than shipped -- see NoteMesh.
+            NoteMesh.Attach(transform);
 
             source = GetComponent<AudioSource>();
             if (source == null)
@@ -330,6 +340,8 @@ namespace BraidsSynth
         public override void OnSimulateStart()
         {
             gateOpen = false;
+            emulatedPressPending = false;
+            emulatedDown = false;
             level = 0f;
             oscillator.Init();
             blocker.Reset();
@@ -345,13 +357,13 @@ namespace BraidsSynth
         {
             PushSettings();
 
-            // Read the emulated state as well as the keyboard, which is what lets a
-            // variable drive the block in place of a key. Both are taken every frame
-            // and not only the one the mode in force needs: the edge EmulationPressed
-            // reports comes from a snapshot MKey advances once per fixed step, and
-            // left uncalled through a change of mode that snapshot goes stale.
-            bool held = PlayKey.IsHeld || PlayKey.EmulationHeld(true);
-            bool pressed = PlayKey.IsPressed || PlayKey.EmulationPressed();
+            // The keyboard ORed with the emulation KeyEmulationUpdate latched, which
+            // is what lets a variable drive the block in place of a key. The
+            // physical half stays here, in Update, where key edges belong; the
+            // emulated half cannot be read here at all -- see KeyEmulationUpdate.
+            bool held = PlayKey.IsHeld || emulatedDown;
+            bool pressed = PlayKey.IsPressed || emulatedPressPending;
+            emulatedPressPending = false;
 
             if (PushToggle.IsActive)
             {
@@ -366,6 +378,33 @@ namespace BraidsSynth
                 // gate cannot then be left open by a release nobody was looking for.
                 gateOpen = held;
             }
+        }
+
+        /// <summary>
+        /// Besiege's own emulation pass, and the only place the emulated edges are
+        /// worth reading.
+        ///
+        /// `Machine.FixedUpdate` runs this once per fixed step, and in order: every
+        /// block's `SendEmulationUpdateBlock` first, so each emulator and each
+        /// variable has raised its count, then `EmulationUpdateBlock` on everything
+        /// registered for it -- which for a modded block is always, since
+        /// `BlockPrefabCreator.SetupBehaviour` sets `RegisterEmulationUpdate`
+        /// unconditionally. `ModBlockBehaviourHandler` forwards it to here.
+        ///
+        /// The cadence is the point. `MKey.CheckEmulation` latches its previous
+        /// state against `Time.fixedTime`, so an edge exists for exactly one fixed
+        /// step. `SimulateUpdateAlways` is an Update: it can run several times in
+        /// one fixed step and see the same press repeatedly, or none at all and
+        /// miss it. Reading here and latching for the next Update is what makes a
+        /// variable-driven block behave like a played one.
+        /// </summary>
+        public override void KeyEmulationUpdate()
+        {
+            if (PlayKey.EmulationPressed())
+            {
+                emulatedPressPending = true;
+            }
+            emulatedDown = PlayKey.EmulationHeld(true);
         }
 
         /// <summary>Hands the block's current settings to the audio thread.</summary>

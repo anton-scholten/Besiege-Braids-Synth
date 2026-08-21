@@ -1,0 +1,6 @@
+# Besiege's screenshots, which is how a problem gets described in this repo:
+# they are dropped in the working copy, looked at, and are of no use afterwards.
+# Named by the game as <yyyymmddhhmmss>_<n>.jpg, so a picture that is meant to be
+# kept -- docs/something.png -- is not caught by this.
+[0-9]*_[0-9].jpg
+[0-9]*_[0-9].png
