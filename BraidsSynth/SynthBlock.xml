@@ -1,0 +1,93 @@
+<Block>
+	<Debug>false</Debug>
+	<ID>1</ID>
+	<Name>Synth Block</Name>
+	<Mass>0.5</Mass>
+	<SearchKeywords>
+		<Keyword>synth block</Keyword>
+		<Keyword>braids</Keyword>
+		<Keyword>oscillator</Keyword>
+		<Keyword>macro oscillator</Keyword>
+		<Keyword>sound</Keyword>
+		<Keyword>music</Keyword>
+	</SearchKeywords>
+	<CanFlip>false</CanFlip>
+	<Fallback>Ballast</Fallback>
+
+	<Modules>
+		<BraidsSynth modid="89025196-4dcd-4213-b839-2f95cd35a942" />
+	</Modules>
+
+	<!-- Mesh, texture and their placement are Sound Blocks' cube, which is
+	     modelled around the origin rather than around its base point, hence the
+	     offset and the three quarter turns. -->
+	<Mesh name="SynthBlock_mesh">
+		<Position x="0.45" y="-0.45" z="0.0" />
+		<Rotation x="-90.0" y="-90.0" z="-90.0" />
+		<Scale x="1" y="1" z="1" />
+	</Mesh>
+
+	<Texture name="SynthBlock_texture" />
+
+	<!-- How the block is posed for its toolbar thumbnail: pulled back off the
+	     camera and turned so two faces are lit. -->
+	<Icon>
+		<Position x="-0.15" y="-0.35" z="-1.5" />
+		<Rotation x="-30.0" y="-30.0" z="0.0" />
+		<Scale x="0.5" y="0.5" z="0.5" />
+	</Icon>
+
+	<FireInteraction burnDuration="5" igniteOnStart="false">
+		<SphereTrigger>
+			<Position x="0" y="0" z="0.3" />
+			<Radius>1</Radius>
+		</SphereTrigger>
+	</FireInteraction>
+
+	<!-- Without a collider the block has nothing to be hit by a cannonball, and
+	     nothing for the cursor to find once it is on the machine. -->
+	<Colliders>
+		<BoxCollider>
+			<Position x="0.0" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="0.0" z="0.0" />
+			<Scale x="0.8" y="0.8" z="0.8" />
+		</BoxCollider>
+	</Colliders>
+
+	<!-- The face the block is placed on. Without a BasePoint the block cannot be
+	     attached to a machine at all, which is what "no block appears" looks
+	     like from the toolbar. -->
+	<BasePoint hasAddingPoint="false">
+		<Stickiness enabled="true" radius="1" />
+		<Motion x="false" y="false" z="false" />
+	</BasePoint>
+
+	<!-- The five free faces of the cube, so blocks can be stacked onto it. -->
+	<AddingPoints>
+		<AddingPoint> <!-- top -->
+			<Position x="0.0" y="0.0" z="1.0" />
+			<Rotation x="0.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0" />
+		</AddingPoint>
+		<AddingPoint> <!-- back -->
+			<Position x="0.0" y="-0.5" z="0.5" />
+			<Rotation x="90.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0" />
+		</AddingPoint>
+		<AddingPoint> <!-- front -->
+			<Position x="0.0" y="0.5" z="0.5" />
+			<Rotation x="-90.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0" />
+		</AddingPoint>
+		<AddingPoint> <!-- left -->
+			<Position x="0.5" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="90.0" z="0.0" />
+			<Stickiness enabled="false" radius="0" />
+		</AddingPoint>
+		<AddingPoint> <!-- right -->
+			<Position x="-0.5" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="-90.0" z="0.0" />
+			<Stickiness enabled="false" radius="0" />
+		</AddingPoint>
+	</AddingPoints>
+</Block>

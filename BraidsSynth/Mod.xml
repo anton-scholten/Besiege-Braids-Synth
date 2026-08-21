@@ -1,0 +1,39 @@
+﻿<Mod>
+	<Name>Besiege-Braids-Synth</Name>
+	<Author>wizz6rd</Author>
+	<Version>0.1.0</Version>
+
+	<Description>
+	A macro-oscillator block: a port of Mutable Instruments' Braids.
+	Twenty-three models, synthesised live -- pick one, pick a note, and drive
+	TIMBRE and COLOR while the machine runs.
+
+	Install UI Factory (Workshop item 2913469777) for the block's own panel,
+	which names the models, says what the two controls do in each of them, draws
+	the wave coming out, and will play it while you are still building. Without
+	it the block uses Besiege's ordinary block mapper.
+	</Description>
+
+	<Icon name="BraidsSynth_icon" />
+	<Debug>false</Debug>
+	<MultiplayerCompatible>true</MultiplayerCompatible>
+
+	<Assemblies>
+		<Assembly path="BraidsSynth.dll" />
+	</Assemblies>
+
+	<Blocks>
+		<Block path="SynthBlock.xml" />
+	</Blocks>
+
+	<Resources>
+		<Mesh name="SynthBlock_mesh" path="SynthBlock\SynthBlock.obj" />
+		<Texture name="SynthBlock_texture" path="SynthBlock\SynthBlock.png" />
+		<Texture name="BraidsSynth_icon" path="BraidsSynth.png" />
+	</Resources>
+
+
+
+<!-- This value is automatically generated. Do not change it or you may break machine&level save files. -->
+<ID>89025196-4dcd-4213-b839-2f95cd35a942</ID>
+</Mod>
