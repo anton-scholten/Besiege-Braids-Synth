@@ -64,6 +64,16 @@ namespace BraidsSynth
         private Text previewLabel;
         private Image previewMark;
 
+        // What a dial's number means, which is what a typed one has to be read as.
+        // const int rather than an enum: Besiege's compiler segfaults on those.
+        private const int KindNumber = 0;
+        private const int KindPercent = 1;
+        private const int KindSeconds = 2;
+        private const int KindNote = 3;
+
+        private Dial[] dials;
+        private bool typing;
+
         private Dial note;
         private Dial fine;
         private Dial timbre;
@@ -81,10 +91,28 @@ namespace BraidsSynth
         private class Dial
         {
             public UnityEngine.UI.Slider Control;
+            public UnityEngine.UI.InputField Field;
             public Text Value;
             public Text Name;
             public MSlider Bound;
             public bool Writing;
+
+            /// <summary>True from the click into the field until focus leaves it.</summary>
+            public bool Editing;
+
+            /// <summary>Set for one frame, so the click that focused it lands first.</summary>
+            public bool SelectPending;
+
+            /// <summary>
+            /// Set where the slider spans less than the setting allows. Dragging
+            /// stays over the useful range; typing reaches the setting's own limit.
+            /// </summary>
+            public bool Narrowed;
+            public float DragMin;
+            public float DragMax;
+
+            /// <summary>How the value is written and read back. One of Kind*.</summary>
+            public int Kind;
 
             /// <summary>
             /// What the dial rounds to, or zero for a control with no natural step.
@@ -120,6 +148,9 @@ namespace BraidsSynth
 
         private void OnDestroy()
         {
+            // Besiege counts this, so a panel torn down mid-edit would leave the game
+            // believing a menu were still open.
+            HoldInput(false);
             Unhook();
             if (scope != null)
             {
@@ -247,6 +278,16 @@ namespace BraidsSynth
                 }
             }
             pending.Clear();
+
+            for (int i = 0; dials != null && i < dials.Length; i++)
+            {
+                if (dials[i] != null)
+                {
+                    dials[i].Editing = false;
+                    dials[i].SelectPending = false;
+                }
+            }
+            HoldInput(false);
 
             if (block != null)
             {
@@ -550,23 +591,56 @@ namespace BraidsSynth
         {
             note = BuildDial("NOTE", y);
             note.Step = 1f;
+            note.Kind = KindNote;
             y += RowHeight + RowGap;
             fine = BuildDial("FINE", y);
             fine.Step = 1f;
             y += RowHeight + RowGap;
             timbre = BuildDial("TIMBRE", y);
+            timbre.Kind = KindPercent;
             y += RowHeight + RowGap;
             colour = BuildDial("COLOR", y);
+            colour.Kind = KindPercent;
             y += RowHeight + RowGap;
             volume = BuildDial("VOLUME", y);
+            volume.Kind = KindPercent;
             y += RowHeight + RowGap;
             attack = BuildDial("ATTACK", y);
+            attack.Kind = KindSeconds;
+            Narrow(attack, 0f, 2f);
             y += RowHeight + RowGap;
             release = BuildDial("RELEASE", y);
+            release.Kind = KindSeconds;
+            Narrow(release, 0f, 4f);
             y += RowHeight + RowGap;
             range = BuildDial("RANGE", y);
             range.Step = 1f;
+            Narrow(range, 1f, 100f);
+
+            dials = new Dial[] { note, fine, timbre, colour, volume,
+                                 attack, release, range };
             return y + RowHeight + Margin;
+        }
+
+        /// <summary>
+        /// Holds the slider to the range worth dragging over while the setting keeps
+        /// its own wider one, which is what a typed value is measured against.
+        /// </summary>
+        private static void Narrow(Dial dial, float low, float high)
+        {
+            dial.Narrowed = true;
+            dial.DragMin = low;
+            dial.DragMax = high;
+        }
+
+        private static float DragLow(Dial dial)
+        {
+            return dial.Narrowed ? dial.DragMin : dial.Bound.Min;
+        }
+
+        private static float DragHigh(Dial dial)
+        {
+            return dial.Narrowed ? dial.DragMax : dial.Bound.Max;
         }
 
         private const float DialNameWidth = 74f;
@@ -600,9 +674,54 @@ namespace BraidsSynth
                 }
             }
 
-            dial.Value = Label("", right, y, DialValueWidth, RowHeight, 12,
-                               TextAnchor.MiddleRight, Color.white);
+            BuildValue(dial, name, right, y, DialValueWidth, RowHeight);
             return dial;
+        }
+
+        /// <summary>
+        /// The value slot: a label that can be clicked into and typed over.
+        ///
+        /// UI Factory has no input prefab, so this is its Text with an InputField
+        /// built round it. The Text has to be a child rather than the same object,
+        /// because an InputField moves a caret about inside itself -- and it drives
+        /// that Text from then on, which is why everything else writes the value
+        /// through the field rather than to the label.
+        /// </summary>
+        private void BuildValue(Dial dial, string name, float x, float y,
+                                float w, float h)
+        {
+            Text text = Label("", x, y, w, h, 12, TextAnchor.MiddleRight, Color.white);
+            if (text == null)
+            {
+                return;
+            }
+            dial.Value = text;
+
+            GameObject root = new GameObject(name + " Value", typeof(RectTransform));
+            root.transform.SetParent(window.transform, false);
+            Place(root, x, y, w, h);
+
+            Image face = root.AddComponent<Image>();
+            face.color = UIF.PanelBlack;
+
+            RectTransform inner = text.rectTransform;
+            inner.SetParent(root.transform, false);
+            inner.anchorMin = Vector2.zero;
+            inner.anchorMax = Vector2.one;
+            inner.offsetMin = new Vector2(4f, 0f);
+            inner.offsetMax = new Vector2(-4f, 0f);
+            // An InputField will not have rich text in the box it edits.
+            text.supportRichText = false;
+
+            UnityEngine.UI.InputField field =
+                root.AddComponent<UnityEngine.UI.InputField>();
+            field.textComponent = text;
+            field.targetGraphic = face;
+            field.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
+            field.characterLimit = 12;
+            Dial captured = dial;
+            field.onEndEdit.AddListener(delegate(string s) { Typed(captured, s); });
+            dial.Field = field;
         }
 
         private float BuildPreview(float y)
@@ -693,6 +812,195 @@ namespace BraidsSynth
         }
 
         /// <summary>
+        /// Watches which value field has the keyboard, prefills it the moment it is
+        /// clicked into, and holds Besiege's own input off while it does.
+        /// </summary>
+        private void Typing()
+        {
+            bool any = false;
+            for (int i = 0; dials != null && i < dials.Length; i++)
+            {
+                Dial dial = dials[i];
+                if (dial == null || dial.Field == null)
+                {
+                    continue;
+                }
+                bool focused = dial.Field.isFocused;
+                if (focused && !dial.Editing)
+                {
+                    dial.Editing = true;
+                    // The unit is dropped on the way in for a note, whose written
+                    // form is a name *and* a number and so cannot be typed back.
+                    if (dial.Bound != null)
+                    {
+                        dial.Field.text = Editable(dial, dial.Bound.Value);
+                    }
+                    // Held over a frame: the click that gave the field focus puts
+                    // its caret down after this runs, and would drop a selection
+                    // made now. A click into a field selects what is in it; a
+                    // second click, with the field already held, moves the caret.
+                    dial.SelectPending = true;
+                }
+                else if (focused && dial.SelectPending)
+                {
+                    dial.SelectPending = false;
+                    dial.Field.selectionAnchorPosition = 0;
+                    dial.Field.selectionFocusPosition = dial.Field.text.Length;
+                }
+                else if (!focused && dial.Editing)
+                {
+                    dial.Editing = false;
+                    dial.SelectPending = false;
+                }
+                if (focused)
+                {
+                    any = true;
+                }
+            }
+            HoldInput(any);
+        }
+
+        /// <summary>
+        /// Besiege must not read the keyboard while a value is being typed, or the
+        /// camera walks off on the letters and the block keys fire. Its own menus
+        /// raise <c>inMenu</c> for this, and its key handler, the camera and the
+        /// selection tools all stand down for it.
+        ///
+        /// Counted on Besiege's side, so it has to be raised and dropped exactly
+        /// once -- hence the flag, and hence dropping it when the panel closes.
+        /// </summary>
+        private void HoldInput(bool on)
+        {
+            if (on == typing)
+            {
+                return;
+            }
+            typing = on;
+            try
+            {
+                StatMaster.SetInMenu(on);
+            }
+            catch (Exception)
+            {
+                typing = false;
+            }
+        }
+
+        /// <summary>
+        /// A value was typed. Unlike a drag this is a finished edit, so it commits
+        /// at once rather than waiting for a mouse button that was never held.
+        /// Anything unreadable leaves the setting alone and the dial redraws it.
+        /// </summary>
+        private void Typed(Dial dial, string text)
+        {
+            if (dial == null)
+            {
+                return;
+            }
+            dial.Editing = false;
+            if (dial.Bound == null || block == null)
+            {
+                return;
+            }
+
+            float value;
+            if (Read(dial, text, out value))
+            {
+                MSlider bound = dial.Bound;
+                if (dial.Step > 0f)
+                {
+                    value = Mathf.Round(value / dial.Step) * dial.Step;
+                }
+                bound.Value = Mathf.Clamp(value, bound.Min, bound.Max);
+                Commit(bound);
+                Refresh();
+            }
+            ShowDial(dial);
+        }
+
+        /// <summary>
+        /// Reads back what <see cref="Written"/> puts out, and what someone would
+        /// type instead of it: a note as a name or as a number, a time in either
+        /// unit it is written in, and a bare number wherever a unit was left off.
+        /// </summary>
+        private bool Read(Dial dial, string text, out float value)
+        {
+            value = 0f;
+            if (text == null)
+            {
+                return false;
+            }
+            string trimmed = text.Trim();
+            if (trimmed.Length == 0)
+            {
+                return false;
+            }
+
+            if (dial.Kind == KindNote)
+            {
+                int midi;
+                if (BraidsModels.ParseNote(trimmed, out midi))
+                {
+                    value = midi;
+                    return true;
+                }
+                return Number(trimmed, out value);
+            }
+
+            if (!Number(trimmed, out value))
+            {
+                return false;
+            }
+            if (dial.Kind == KindPercent)
+            {
+                // The dial is written as a percentage, so that is what a bare number
+                // typed over it has to mean.
+                value = value / 100f;
+            }
+            else if (dial.Kind == KindSeconds
+                     && trimmed.ToLower().IndexOf("ms") >= 0)
+            {
+                value = value / 1000f;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The leading number, so the unit can be typed back in with it. Takes a
+        /// comma for a decimal point as well as a full stop, and reads the result
+        /// the one fixed way -- a box someone types "1.5" into should not depend on
+        /// which locale the game came up in.
+        /// </summary>
+        private static bool Number(string text, out float value)
+        {
+            value = 0f;
+            int start = -1;
+            int end = -1;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if ((c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+')
+                {
+                    if (start < 0) { start = i; }
+                    end = i;
+                }
+                else if (start >= 0)
+                {
+                    break;
+                }
+            }
+            if (start < 0)
+            {
+                return false;
+            }
+            string number = text.Substring(start, end - start + 1).Replace(',', '.');
+            return float.TryParse(number,
+                                  System.Globalization.NumberStyles.Float,
+                                  System.Globalization.CultureInfo.InvariantCulture,
+                                  out value);
+        }
+
+        /// <summary>
         /// A dial was dragged. The value goes straight into the block's own mapper
         /// slider, which is what the machine saves -- the panel never holds one.
         /// </summary>
@@ -703,7 +1011,7 @@ namespace BraidsSynth
                 return;
             }
             MSlider bound = dial.Bound;
-            float value = Mathf.Lerp(bound.Min, bound.Max, fraction);
+            float value = Mathf.Lerp(DragLow(dial), DragHigh(dial), fraction);
             if (dial.Step > 0f)
             {
                 value = Mathf.Round(value / dial.Step) * dial.Step;
@@ -730,6 +1038,8 @@ namespace BraidsSynth
                 Hide();
                 return;
             }
+
+            Typing();
 
             // The mapper's own widgets can be moved too, so the panel follows the
             // block rather than assuming it is the only thing writing to it.
@@ -826,14 +1136,10 @@ namespace BraidsSynth
             {
                 ShowModel(block.Model.Value);
             }
-            ShowDial(note);
-            ShowDial(fine);
-            ShowDial(timbre);
-            ShowDial(colour);
-            ShowDial(volume);
-            ShowDial(attack);
-            ShowDial(release);
-            ShowDial(range);
+            for (int i = 0; dials != null && i < dials.Length; i++)
+            {
+                ShowDial(dials[i]);
+            }
             ShowPreview();
         }
 
@@ -903,8 +1209,11 @@ namespace BraidsSynth
             float value = dial.Bound.Value;
             if (dial.Control != null)
             {
-                float span = dial.Bound.Max - dial.Bound.Min;
-                float fraction = span <= 0f ? 0f : (value - dial.Bound.Min) / span;
+                float low = DragLow(dial);
+                float span = DragHigh(dial) - low;
+                // Clamped, because a typed value may sit past the end of the travel;
+                // the handle rests against the stop and the number tells the truth.
+                float fraction = span <= 0f ? 0f : Mathf.Clamp01((value - low) / span);
                 if (!Mathf.Approximately(dial.Control.value, fraction))
                 {
                     // Flagged, or the control's own callback reads the write back
@@ -914,9 +1223,20 @@ namespace BraidsSynth
                     dial.Writing = false;
                 }
             }
-            if (dial.Value != null)
+            // Left alone while it is being typed into, or every frame would undo
+            // the keystroke before it was finished.
+            if (dial.Editing)
             {
-                dial.Value.text = Written(dial, value);
+                return;
+            }
+            string shown = Written(dial, value);
+            if (dial.Field != null)
+            {
+                if (dial.Field.text != shown) { dial.Field.text = shown; }
+            }
+            else if (dial.Value != null)
+            {
+                dial.Value.text = shown;
             }
         }
 
@@ -942,11 +1262,15 @@ namespace BraidsSynth
             {
                 // A gate is set in milliseconds and a swell in seconds; writing both
                 // the same way makes one of them unreadable.
-                if (value < 1f)
+                int ms = Mathf.RoundToInt(value * 1000f);
+                if (ms < 1000)
                 {
-                    return Mathf.RoundToInt(value * 1000f) + " ms";
+                    return ms + " ms";
                 }
-                return value.ToString("0.00") + " s";
+                // Written out by hand rather than through a format string, which
+                // would put the decimal separator of whatever locale the game is in
+                // into a box that has to be read back.
+                return (ms / 1000) + "." + ((ms % 1000) / 10).ToString("00") + " s";
             }
             if (dial == range)
             {
@@ -957,6 +1281,20 @@ namespace BraidsSynth
                 return Mathf.RoundToInt(value * 100f) + "%";
             }
             return Mathf.RoundToInt(value * 100f) + "%";
+        }
+
+        /// <summary>
+        /// What a field is filled with when it is clicked into. The same as it reads
+        /// otherwise, except a note: "C4  60" is a name and a number side by side,
+        /// and neither half can be typed back over the pair.
+        /// </summary>
+        private string Editable(Dial dial, float value)
+        {
+            if (dial == note)
+            {
+                return BraidsModels.NoteName(Mathf.RoundToInt(value));
+            }
+            return Written(dial, value);
         }
 
         private void ShowPreview()

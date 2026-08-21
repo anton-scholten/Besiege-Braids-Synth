@@ -90,9 +90,13 @@ namespace BraidsSynth
             Timbre = AddSlider("Timbre", "TimbreKey", 0.5f, 0f, 1f);
             Colour = AddSlider("Color", "ColorKey", 0.5f, 0f, 1f);
             VolumeSlider = AddSlider("Volume", "VolumeKey", 0.5f, 0f, 1f);
-            AttackSlider = AddSlider("Attack", "AttackKey", 0.01f, 0f, 2f);
-            ReleaseSlider = AddSlider("Release", "ReleaseKey", 0.05f, 0f, 4f);
-            RangeSlider = AddSlider("Range", "RangeKey", 8f, 1f, 100f);
+            // These reach further than their dials do. The panel's sliders keep the
+            // travel worth dragging over -- 2 s, 4 s, 100 m -- and a value past the
+            // end of one can be typed instead. The limit is the setting's, so what
+            // is stored is always inside the bounds it declares.
+            AttackSlider = AddSlider("Attack", "AttackKey", 0.01f, 0f, 600f);
+            ReleaseSlider = AddSlider("Release", "ReleaseKey", 0.05f, 0f, 600f);
+            RangeSlider = AddSlider("Range", "RangeKey", 8f, 1f, 100000f);
             PushToggle = AddToggle("Toggle", "ToggleKey", false);
 
             // Everything but the key and the toggle belongs to the panel, which has
@@ -185,7 +189,11 @@ namespace BraidsSynth
             previewing = on && !StatMaster.levelSimulating;
             if (previewing)
             {
+                // The standing start a run gets, so a model sounds the same however
+                // it is heard: without the Init the oscillator carries the state it
+                // was left in, which the stateful models are audibly not clean of.
                 level = 0f;
+                oscillator.Init();
                 blocker.Reset();
                 PushSettings();
             }
@@ -236,23 +244,30 @@ namespace BraidsSynth
             {
                 previewing = false;
             }
-            else if (previewing)
+
+            // The source outlives the gate. Closing the gate leaves the voice its
+            // release to play, and stopping the source at that moment is what cut it
+            // off under LISTEN -- while a run, which holds the source up for its
+            // whole length, let the same release through. `playing` is the audio
+            // thread saying it has not reached silence yet.
+            bool wanted = previewing || simulating || (playing && source.isPlaying);
+
+            if (wanted)
             {
-                // So the panel's dials are heard as they move.
-                PushSettings();
+                if (!simulating)
+                {
+                    // So the panel's dials are heard as they move, release included.
+                    PushSettings();
+                }
+                Place();
             }
 
-            bool wanted = previewing || simulating;
             if (wanted != source.isPlaying)
             {
                 if (wanted) { source.Play(); }
                 else { source.Stop(); }
             }
-            if (wanted)
-            {
-                Place();
-            }
-            else
+            if (!source.isPlaying)
             {
                 // Nothing is driving the audio callback now, so it cannot clear this
                 // itself -- and the panel would go on drawing the last waveform.
@@ -330,13 +345,26 @@ namespace BraidsSynth
         {
             PushSettings();
 
-            if (PlayKey.IsPressed)
+            // Read the emulated state as well as the keyboard, which is what lets a
+            // variable drive the block in place of a key. Both are taken every frame
+            // and not only the one the mode in force needs: the edge EmulationPressed
+            // reports comes from a snapshot MKey advances once per fixed step, and
+            // left uncalled through a change of mode that snapshot goes stale.
+            bool held = PlayKey.IsHeld || PlayKey.EmulationHeld(true);
+            bool pressed = PlayKey.IsPressed || PlayKey.EmulationPressed();
+
+            if (PushToggle.IsActive)
             {
-                gateOpen = PushToggle.IsActive ? !gateOpen : true;
+                if (pressed)
+                {
+                    gateOpen = !gateOpen;
+                }
             }
-            if (!PushToggle.IsActive && PlayKey.IsReleased)
+            else
             {
-                gateOpen = false;
+                // Held, rather than the press and release edges it used to watch: a
+                // gate cannot then be left open by a release nobody was looking for.
+                gateOpen = held;
             }
         }
 

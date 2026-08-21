@@ -37,11 +37,42 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   picked, and that is the whole difficulty of a macro-oscillator. They are still
   mapper settings and still saved with the machine; only their display is off. This
   makes UI Factory a hard dependency rather than a soft one.
+- **Every value on the panel can be typed**, not only dragged: click the number and
+  write over it. Units are read back the way they are written, so `20 ms`, `1.50 s`,
+  `50%` and `8 m` all go back in as themselves, and NOTE takes either a name — `C4`,
+  `F#2`, `Bb3` — or a MIDI number. Besiege's keyboard is held off while a field has
+  focus, or the letters would drive the camera and fire the block keys. A click
+  selects what is in the box and a second click places the caret, as Besiege's own
+  value boxes do.
+- **ATTACK, RELEASE and RANGE reach further than their sliders do.** The travel
+  stays where it is worth dragging — 2 s, 4 s, 100 m — and a longer swell or a
+  wider carry can be typed instead, up to 600 s and 100000 m. The limit belongs to the
+  setting rather than the panel, so what is stored is always inside the bounds the
+  setting declares; the handle simply rests against its stop.
 - **RANGE**, in metres: the radius the block is at full volume within, with the
   1/distance falloff scaled to match, so one dial covers both how loud a block is
   and how far away it can still be heard.
 
+- **The gate takes a variable as well as a key.** PLAY reads the emulated state
+  beside the keyboard, so Besiege's variables drive the block the way they drive
+  any other. Variables are an `MKey` feature and nothing else — sliders, toggles and
+  menus have no part in them — so hiding the rest of the settings from the mapper
+  costs nothing here.
+
 **Fixed along the way**
+
+- RELEASE was not heard under LISTEN, though it was in a run. The source was kept
+  up for exactly as long as the gate was open, so turning LISTEN off stopped it in
+  the same frame and the audio callback -- the thing that plays the release out --
+  stopped with it. A run keeps its source up for the whole run, which is why the
+  identical ramp was heard there. The source now outlives the gate: it runs on
+  until the voice reports that it has reached silence, under LISTEN and in a run
+  alike, and the panel's dials and the block's placement keep following it through
+  the tail.
+- LISTEN did not give the oscillator the standing start a run does. `OnSimulateStart`
+  calls `Init` and starting a preview did not, so a model auditioned after another
+  one carried whatever state it was left in -- audible on the models that have any,
+  which is the swarm and the comb.
 
 - The block was heard at the same volume from everywhere, dead centre, however the
   camera moved -- in a simulation and under LISTEN alike. The oscillator writes its

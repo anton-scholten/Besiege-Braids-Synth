@@ -134,6 +134,52 @@ namespace BraidsSynth
         }
 
         /// <summary>
+        /// A note name back to its MIDI number -- "C4", "c#4", "Bb3", "A-1" -- so a
+        /// pitch can be typed the way it is read. False if it is not a note name at
+        /// all, which is the caller's cue to try it as a plain number instead.
+        /// </summary>
+        public static bool ParseNote(string text, out int midiNote)
+        {
+            midiNote = 0;
+            if (text == null)
+            {
+                return false;
+            }
+            string t = text.Trim();
+            if (t.Length < 2)
+            {
+                return false;
+            }
+
+            int step;
+            switch (char.ToUpper(t[0]))
+            {
+                case 'C': step = 0; break;
+                case 'D': step = 2; break;
+                case 'E': step = 4; break;
+                case 'F': step = 5; break;
+                case 'G': step = 7; break;
+                case 'A': step = 9; break;
+                case 'B': step = 11; break;
+                default: return false;
+            }
+
+            // The letter is taken first, so the 'b' of "Bb3" is read as the flat it
+            // is rather than as a second note.
+            int at = 1;
+            if (t[at] == '#' || t[at] == 's' || t[at] == 'S') { step++; at++; }
+            else if (t[at] == 'b' || t[at] == 'B') { step--; at++; }
+
+            int octave;
+            if (at >= t.Length || !int.TryParse(t.Substring(at), out octave))
+            {
+                return false;
+            }
+            midiNote = (octave + 1) * 12 + step;
+            return true;
+        }
+
+        /// <summary>
         /// A MIDI note as a name: 60 is C4, which is what a keyboard would call it.
         /// </summary>
         public static string NoteName(int midiNote)

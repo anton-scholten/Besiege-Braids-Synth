@@ -42,7 +42,9 @@ Clicking a synth block opens it, and closing the block's settings closes it agai
 - **LISTEN**, which sounds the block while the machine is still being built, so a
   model can be chosen by ear rather than by name.
 - **Every dial**: NOTE and FINE, TIMBRE and COLOR, VOLUME, ATTACK and RELEASE, and
-  RANGE.
+  RANGE. Drag them, or click the value and type it — including NOTE, which takes
+  either a name (`C4`, `F#2`, `Bb3`) or a MIDI number. A click selects what is in
+  the box; a second click puts the caret where you clicked.
 
 Everything on the panel is one of the block's own mapper settings, hidden from the
 mapper rather than kept apart from it, so the machine saves exactly as before.
@@ -53,7 +55,7 @@ Play and Toggle are on Besiege's block mapper. The rest are on the panel.
 
 | Setting | What it does |
 | --- | --- |
-| Play | Key that opens the gate. Default `B` |
+| Play | Key that opens the gate. Default `B`. Takes a variable in place of a key, like any other block's |
 | Toggle | On, the key starts and stops. Off, it plays while held |
 | Model | Which of the twenty-three |
 | Note | Pitch, as a MIDI note number |
@@ -61,9 +63,9 @@ Play and Toggle are on Besiege's block mapper. The rest are on the panel.
 | Timbre | Braids' TIMBRE. Means whatever the model decides |
 | Color | Braids' COLOR, likewise |
 | Volume | 0 to 1 |
-| Attack | How long the gate takes to open, in seconds |
-| Release | And to close |
-| Range | How far the block carries, in metres. Full volume within it, then falling away as 1/distance — so turning it up makes the block louder at any distance as well as audible from further off |
+| Attack | How long the gate takes to open, in seconds. The slider covers 0–2 s; type for up to 600 |
+| Release | And to close. The slider covers 0–4 s; type for up to 600 |
+| Range | How far the block carries, in metres. Full volume within it, then falling away as 1/distance — so turning it up makes the block louder at any distance as well as audible from further off. The slider covers 1–100 m; type for up to 100000 |
 
 ## Models
 

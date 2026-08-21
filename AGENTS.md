@@ -193,6 +193,28 @@ The sibling repo `Besiege-Git-view` carries much longer notes on UI Factory in
 graphic cannot be tinted, and what Besiege's palette is. Read them before adding
 to the panel.
 
+**Variables reach a block through its keys and nowhere else.** `MKey` carries the
+whole feature — `Emulating`, `EmulationPressed`, `EmulationHeld(includePressed)`,
+`EmulationReleased` — while `MSlider`, `MToggle`, `MMenu` and `MapperType` have
+nothing variable-related on them at all. So read a key as
+`IsPressed || EmulationPressed()` and `IsHeld || EmulationHeld(true)`, the way
+`Modding.Modules.Official.ShootingModuleBehaviour` does, and a variable drives the
+block for free. The edge methods sit on a snapshot `MKey` advances once per fixed
+step, so polling them often is safe but leaving one uncalled lets it go stale —
+read both every frame rather than only the one the current mode needs.
+
+**Typing into the panel needs Besiege's keyboard held off.** Its own key handler,
+the camera orbit and both selection tools stand down for `StatMaster.inMenu`, and
+`StatMaster.SetInMenu(bool)` is public — so raise it while a field has focus and
+drop it after, or the letters being typed drive the camera and fire block keys.
+Besiege *counts* it, so it has to be raised and dropped exactly once: drop it when
+the panel closes too, or the game is left believing a menu is still open.
+(`StatMaster.textFieldSelected` looks like the flag for this and is not — only
+`ScaleOnMouseOver` and `KeySelectorExtender` read it.) UI Factory has no input
+prefab, so a typable value is its `Text` with an `InputField` built round it, the
+Text a *child* of the field — and from then on the field drives the Text, so write
+values through `InputField.text`, never to the label.
+
 Watch the name: **Besiege has its own `Slider` in the global namespace**, and it
 is the one an unqualified `Slider` binds to. Write `UnityEngine.UI.Slider` in
 full. Same for `Scrollbar`, `LOD` and `Particle`, and fully qualify every
