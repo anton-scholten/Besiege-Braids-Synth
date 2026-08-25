@@ -480,7 +480,11 @@ namespace BraidsSynth
 
         public override void OnSimulateStop()
         {
+            // Cleared at both ends of a run: Besiege keeps a behaviour alive between
+            // them, so an edge caught as one ends would fire as the next begins.
             gateOpen = false;
+            emulatedPressPending = false;
+            emulatedDown = false;
         }
 
         public override void SimulateUpdateAlways()

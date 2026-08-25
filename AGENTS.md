@@ -210,12 +210,22 @@ to the panel.
 **Variables reach a block through its keys and nowhere else.** `MKey` carries the
 whole feature — `Emulating`, `EmulationPressed`, `EmulationHeld(includePressed)`,
 `EmulationReleased` — while `MSlider`, `MToggle`, `MMenu` and `MapperType` have
-nothing variable-related on them at all. So read a key as
-`IsPressed || EmulationPressed()` and `IsHeld || EmulationHeld(true)`, the way
-`Modding.Modules.Official.ShootingModuleBehaviour` does, and a variable drives the
-block for free. The edge methods sit on a snapshot `MKey` advances once per fixed
-step, so polling them often is safe but leaving one uncalled lets it go stale —
-read both every frame rather than only the one the current mode needs.
+nothing variable-related on them at all.
+
+**Read the emulated half in `KeyEmulationUpdate`, not in the frame update.** `MKey`
+advances its snapshot once per *fixed* step and answers the same for the rest of
+it, so `EmulationPressed()` asked from `SimulateUpdateAlways` reports one variable
+press again on every frame of that step — two or three times at a high frame rate,
+which a toggle acts on two or three times. Latch the edge in `KeyEmulationUpdate`,
+hand it out once in the frame update, and clear the latches at both ends of a run.
+`Modding.Modules.Official.ShootingModuleBehaviour` reads it from the frame update
+and has this bug; `SpewingModuleBehaviour` and `SpinningModuleBehaviour` do it the
+right way. Follow those two.
+
+`ModBlockBehaviourHandler::EmulationUpdateBlock` is what reaches the override, via
+`ModdingUtil::PerformCallback` over a closure — which is why searching the IL for
+callers of `KeyEmulationUpdate` finds none. It is gated on the block simulating,
+so the hook only runs during a run.
 
 **Typing into the panel needs Besiege's keyboard held off.** Its own key handler,
 the camera orbit and both selection tools stand down for `StatMaster.inMenu`, and
