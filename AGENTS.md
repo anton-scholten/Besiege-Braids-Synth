@@ -323,12 +323,30 @@ cage's unwrap sits above 0.61 in both, so `SetPixel(0, 0)` is the note and
 `SetPixel(1, 1)` is the cage with nothing in between to blur. Keep those two
 corners apart if either unwrap ever changes.
 
-The cage it stands in is Special Effects' text block (same author) with its
-lettering dropped; that split of the OBJ's two connected pieces was a one-off, and
-its result is kept as `tools/cage.obj`, which is the script's input. That frame is
-an outer skin with **no inner walls**, so from inside the block its far pillars are
-culled and it reads hollow — the script emits a reversed copy of every cage face,
-normal turned round, which makes it solid from any angle.
+The block was a Special Effects text-block cage with the note standing inside it,
+until the note became the whole block; none of that mod's geometry is left and the
+credit went with it. `NOTE_HEIGHT` sizes the note, and the icon's `<Scale>` has to
+move with it — see the note in `SynthBlock.xml` on why icon scale does not compound
+with mesh scale.
+
+`SafeAwake` clears `BlockBehaviour.Prefab.SkinCanBeChanged`, which takes the skin
+picker off the mapper: the block's mesh and texture are generated to be looked at,
+and one texel of that texture is the note's colour, so a skin replaces both and
+takes the lit note with it. Prefab is shared per block type, so one instance
+settles it for all.
+
+`Chooser.cs`, `Swell.cs` and `ZoomGuard.cs` are **copies of Special Effects' own**,
+same author, taken as-is. The model menu is Chooser: `< name >`, arrows stepping
+and the name opening the list. It is hand-built rather than UI Factory's drop-down
+prefab for the reason written at the top of it — the prefab's list spills past the
+scroll view and paints the overflow over the world, which is exactly what happened
+here before the swap. Its list hangs off the **canvas**, not the row, or the scroll
+view clips it. Keep the three files in step with that mod rather than letting them
+drift.
+
+The panel docks under the block mapper. That is measured, not parented, and the
+measurement is fiddly enough to have its own write-up: see
+`notes/05-docking-a-window.md` in the modding-notes repo, which this follows.
 
 The block's texture is generated too, by the same principle: a flat grey square
 with one black corner. The cage's unwrap only reaches into u 0.61 and v 0.63

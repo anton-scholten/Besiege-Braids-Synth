@@ -67,9 +67,23 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   menus have no part in them — so hiding the rest of the settings from the mapper
   costs nothing here.
 
+- **No skin picker.** The block's mesh and texture are generated to be looked at,
+  and one texel of that texture is the note's colour, so a skin would replace both
+  and take the lit note with it.
+- **The model is a dropdown**, not twenty-three buttons. The list was most of the
+  panel's height; a dropdown is one row that opens the whole list when asked, and
+  scrolls it — which brings the panel itself inside the room under the mapper and
+  takes its scroll bar away. An arrow either side steps to the next model without
+  opening it. The control is Special Effects' own, hand-built rather than taken
+  from UI Factory's drop-down prefab, whose list spills past the panel and paints
+  what should have been scrolled away over the world.
+- **The panel docks under Besiege's mapper**, measured against it every frame and
+  taking its width from it, so the two read as one window with a seam. It scrolls,
+  and LISTEN sits under the trace, which is the thing it makes move.
 - **A block of its own to look at.** The model is Special Effects' text block cage
   with its lettering stripped out, painted a flat grey, and standing inside it is a
-  pair of beamed semiquavers in black. Mesh and texture are both generated, by
+  pair of beamed semiquavers in black, filling the block. Mesh and texture are both
+  generated, by
   `./tools/make-block-mesh.py`: the texture is a 714-byte square of grey with one
   black corner, which is where the note's vertices look, so the note needs no
   material of its own and stays black whatever colour the machine is painted. The
@@ -82,6 +96,10 @@ First cut. A Synth Block that renders Braids' macro-oscillator live.
   a mesh to re-export.
 
 **Fixed along the way**
+
+- The panel was invisible the first time a block was opened. `BuildWindow` leaves
+  what it builds switched off, and the first open takes its width from the mapper
+  and rebuilds — after the `Show` that would have switched it on had already run.
 
 - The block disappeared from the toolbar entirely. A comment in `SynthBlock.xml`
   had a dash written as two hyphens, which XML does not allow inside a comment, so

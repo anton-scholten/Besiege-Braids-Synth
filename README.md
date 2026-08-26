@@ -32,20 +32,23 @@ build uses Besiege's own compiler.
 
 ## The block
 
-![The block: a cage with a lit note standing inside it](BraidsSynth.jpg)
+![The mod's thumbnail: a lit note on a starfield](BraidsSynth.jpg)
 
-A cage with a musical note standing in it. The note lights up while the block is
-sounding, in a colour off the **Note** slider on Besiege's own block mapper — so a
-machine full of them shows you which ones are playing.
+The block is a musical note. It lights up while the block is sounding, in a colour
+off the **Note** slider on Besiege's own block mapper — so a machine full of them
+shows you which ones are playing.
 
 ## The panel
 
-Clicking a synth block opens it, and closing the block's settings closes it again.
+The panel docks under Besiege's own block mapper, the same width as it, so the two
+read as one window. It scrolls, since there is more in it than fits beside a
+machine, and it goes when the mapper goes.
 
 - **A live trace of the block's own output.** Twenty-three models and two controls
   that mean something different under each of them: the fastest way to find out
   what a control does is to watch it.
-- **The model list**, Braids' own sixteen and then the plain waveforms.
+- **The model dropdown**, Braids' own sixteen and then the plain waveforms, with
+  an arrow either side for stepping through them one at a time.
 - **What TIMBRE and COLOR do in the model you picked**, in words, because in Braids
   they never mean the same thing twice.
 - **LISTEN**, which sounds the block while the machine is still being built, so a
@@ -147,4 +150,6 @@ Braids is by Émilie Gillet / [Mutable Instruments](https://github.com/pichenett
 MIT licensed; the notice ships in
 [BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt](BraidsSynth/BraidsSynthScripts/BRAIDS-LICENSE.txt).
 The panel is built from [UI Factory 3](https://gitlab.com/dagriefaa/ui-factory-3)
-by dagriefaa.
+by dagriefaa. It docks against the block mapper, and the block's toolbar pose is
+set, the way [Orchestra](https://github.com/anton-scholten/Besiege-Orchestra) does
+both.

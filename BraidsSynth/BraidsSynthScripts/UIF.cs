@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -32,6 +33,9 @@ namespace BraidsSynth
         public const string ButtonPrefab = "Text Button";
         public const string SliderPrefab = "Slider";
         public const string PanelPrefab = "Panel";
+
+        /// <summary>A dropdown: the whole list at once, and it scrolls.</summary>
+        public const string DropdownPrefab = "Text Dropdown";
 
         /// <summary>
         /// Besiege's red, which is what the game paints the option in force. Kept
@@ -150,6 +154,33 @@ namespace BraidsSynth
         /// rather than turned down, the two scales being private to UI Factory: a
         /// disabled behaviour is never told the pointer arrived.
         /// </summary>
+        /// <summary>
+        /// Takes UI Factory's translator off every label in a spawned hierarchy.
+        /// Window, Options and Text Toggle each bring one, and not always on the
+        /// object carrying the Text -- and it is DestroyImmediate because a deferred
+        /// Destroy can lose the race with the translator's own Start.
+        /// </summary>
+        public static void UntranslateAll(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+            try
+            {
+                Besiege.UI.Behaviours.Translator[] found =
+                    root.GetComponentsInChildren<Besiege.UI.Behaviours.Translator>(true);
+                for (int i = 0; i < found.Length; i++)
+                {
+                    UnityEngine.Object.DestroyImmediate(found[i]);
+                }
+            }
+            catch (Exception)
+            {
+                // As Untranslate: usable text either way.
+            }
+        }
+
         public static void NoSwell(GameObject control)
         {
             if (control == null)

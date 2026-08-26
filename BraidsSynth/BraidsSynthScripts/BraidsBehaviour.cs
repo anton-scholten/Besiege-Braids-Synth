@@ -167,6 +167,20 @@ namespace BraidsSynth
             source.spatialBlend = 0f;
 
             Dress();
+
+            // No skin picker on this block. `BlockMapper.RefreshLists` shows that
+            // control when the prefab's CanGetNewVisuals is true, which is
+            // SkinCanBeChanged && (CanChangeMesh || CanChangeTexture) -- and this
+            // block wears a mesh and a texture of its own, generated to be looked
+            // at, with one texel of that texture carrying the note's colour. A skin
+            // over the top replaces both and takes the lit note with it.
+            //
+            // The prefab is shared by every block of this type, so the first one to
+            // awake settles it for all of them, and the flag is not written to disk.
+            if (BlockBehaviour != null && BlockBehaviour.Prefab != null)
+            {
+                BlockBehaviour.Prefab.SkinCanBeChanged = false;
+            }
         }
 
         /// <summary>

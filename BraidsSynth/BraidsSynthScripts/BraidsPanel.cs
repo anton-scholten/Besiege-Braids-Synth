@@ -29,15 +29,26 @@ namespace BraidsSynth
         // popup list -- a canvas that ties with it leaves the list unclickable.
         private const int CanvasOrder = 2400;
 
-        private const float Width = 520f;
+        /// <summary>
+        /// Taken from Besiege's mapper every frame, so the two read as one window.
+        /// The starting value only matters until the first dock.
+        /// </summary>
+        private float width = 520f;
         private const float Margin = 12f;
         private const float ScopeHeight = 96f;
         private const float RowHeight = 26f;
         private const float RowGap = 3f;
-        private const int ModelColumns = 2;
+        /// <summary>How wide the model chooser's name is, between its two arrows.</summary>
+        private const float SelectorWidth = 250f;
 
         /// <summary>How often the trace is redrawn. Fast enough to look live.</summary>
         private const float ScopeInterval = 0.05f;
+
+        /// <summary>
+        /// How much screen is left under the panel, so it stops short of the bottom
+        /// edge rather than running into it.
+        /// </summary>
+        private const float Clearance = 56f;
 
         private static readonly Vector2 Reference = new Vector2(1920f, 1080f);
 
@@ -48,6 +59,16 @@ namespace BraidsSynth
 
         private GameObject window;
         private RectTransform windowRect;
+
+        /// <summary>Where the rows go: the Window prefab's own scroll content.</summary>
+        private Transform host;
+        private RectTransform content;
+
+        /// <summary>How tall the rows came out, before the frame caps them.</summary>
+        private float contentHeight;
+
+        /// <summary>The camera that draws the mapper. See MapperCamera.</summary>
+        private Camera mapperEye;
         private ClickShield shield;
 
         private RawImage scopeImage;
@@ -55,8 +76,10 @@ namespace BraidsSynth
         private float[] samples;
         private float nextScope;
 
-        private readonly Image[] modelMarks = new Image[BraidsModels.Count];
-        private readonly Text[] modelLabels = new Text[BraidsModels.Count];
+        private Chooser modelPicker;
+
+        /// <summary>The selector's list, built once; it never changes.</summary>
+        private readonly List<string> modelNames = BraidsModels.MenuItems();
         private int shownModel = -1;
 
         private Text timbreMeaning;
@@ -287,6 +310,12 @@ namespace BraidsSynth
                     dials[i].SelectPending = false;
                 }
             }
+            // The open list hangs off the canvas, not the window, so hiding the
+            // window alone would leave it on screen.
+            if (modelPicker != null)
+            {
+                modelPicker.Close();
+            }
             HoldInput(false);
 
             if (block != null)
@@ -308,6 +337,39 @@ namespace BraidsSynth
         /// that touches its types before this point, so a missing assembly is one
         /// log line rather than an exception thrown into the mapper's callback.
         /// </summary>
+        /// <summary>
+        /// Drops the built window and everything that pointed into it. Called before
+        /// a rebuild and when the panel goes away for good.
+        /// </summary>
+        private void Teardown()
+        {
+            HoldInput(false);
+            host = null;
+            content = null;
+            scopeImage = null;
+            dials = null;
+            note = null; fine = null; timbre = null; colour = null;
+            volume = null; attack = null; release = null; range = null;
+            timbreMeaning = null;
+            colourMeaning = null;
+            previewLabel = null;
+            previewMark = null;
+            modelPicker = null;
+            shownModel = -1;
+            if (scope != null)
+            {
+                scope.Dispose();
+                scope = null;
+            }
+            if (window != null)
+            {
+                Destroy(window);
+                window = null;
+                windowRect = null;
+            }
+            built = false;
+        }
+
         private bool Build()
         {
             if (built)
@@ -328,6 +390,11 @@ namespace BraidsSynth
 
             try
             {
+                // Every rebuild starts from nothing. Without this the width change
+                // that triggers one spawns a second Window prefab and leaves the
+                // first parented to the canvas, active, docked to nothing -- a
+                // stray panel loose on the screen.
+                Teardown();
                 BuildWindow();
                 built = true;
             }
@@ -377,36 +444,33 @@ namespace BraidsSynth
             windowRect = window.transform as RectTransform;
             // Anchored and pivoted by us rather than however the prefab was authored,
             // so the placement below means one thing.
-            // Asked for, not insisted on: UI Factory's Window places itself when it
-            // is enabled, and where it puts itself -- centred, which lands just left
-            // of Besiege's block mapper -- is where it stays. Its own top bar is a
-            // drag handle, and so is the trace, so the player can move it anyway.
+            // Centred anchors and pivot, so the placement in Dock means one thing:
+            // anchoredPosition is the window's middle against the screen's.
             windowRect.anchorMin = new Vector2(0.5f, 0.5f);
             windowRect.anchorMax = new Vector2(0.5f, 0.5f);
             windowRect.pivot = new Vector2(0.5f, 0.5f);
 
+            // No title bar: this is the mapper's lower half, not a window of its
+            // own. The bar carries a drag handle, which would pull half a window
+            // away from the other half, and a close cross that would shut only the
+            // half it is on -- and, left in place, the prefab's authored title,
+            // which reads exactly like a caption that failed to load.
             RectTransform bar = window.transform.FindChild("TopBar") as RectTransform;
             if (bar != null)
             {
-                Text title = bar.GetComponentInChildren<Text>(true);
-                if (title != null)
-                {
-                    UIF.Untranslate(title);
-                    title.text = "BRAIDS";
-                    title.alignment = TextAnchor.MiddleCenter;
-                    title.raycastTarget = false;
-                }
-                Transform close = bar.FindChild("CloseButton");
-                if (close != null)
-                {
-                    // The mapper is what owns this window's life, so its own cross
-                    // closes the mapper rather than orphaning the panel.
-                    Button button = close.GetComponent<Button>();
-                    if (button != null)
-                    {
-                        button.onClick.AddListener(CloseMapper);
-                    }
-                }
+                bar.gameObject.SetActive(false);
+            }
+
+            // The prefab anchors its scroll view below that bar, so hiding the bar
+            // alone leaves a bar's worth of empty frame above the first row.
+            ScrollRect scroll = window.GetComponentInChildren<ScrollRect>(true);
+            RectTransform view = scroll == null ? null : scroll.transform as RectTransform;
+            if (view != null)
+            {
+                view.anchorMin = Vector2.zero;
+                view.anchorMax = Vector2.one;
+                view.offsetMin = Vector2.zero;
+                view.offsetMax = Vector2.zero;
             }
 
             shield = gameObject.GetComponent<ClickShield>();
@@ -416,20 +480,254 @@ namespace BraidsSynth
             }
             shield.Guard(windowRect);
 
-            float y = bar == null ? Margin : bar.rect.height + Margin;
+            // Rows belong in the scroll view the Window prefab ships with. Put on
+            // the window instead, that scroll view keeps the prefab's own 500-unit
+            // placeholder -- taller than any panel, so a scrollbar sits there
+            // permanently beside an empty region. Filled properly, Besiege's scroll
+            // view hides its bars whenever the contents fit.
+            content = scroll == null ? null : scroll.content;
+            host = content != null ? (Transform)content : window.transform;
+
+            float y = Margin;
             y = BuildScope(y);
+            // LISTEN sits under the trace, since what it does is make the trace move.
+            y = BuildPreview(y);
             y = BuildModels(y);
             y = BuildMeanings(y);
             y = BuildDials(y);
-            y = BuildPreview(y);
 
-            // The window is as tall as what went into it. Guessing a height means
-            // the last rows hang below the frame the moment the model list, the
-            // prefab's top bar or a row height changes -- and every child is
-            // anchored to the top edge, so growing it downwards leaves them put.
-            windowRect.sizeDelta = new Vector2(Width, y);
+            contentHeight = y;
+            if (content != null)
+            {
+                content.sizeDelta = new Vector2(content.sizeDelta.x, y);
+            }
+            // A height is settled at dock time, against the room below the mapper;
+            // anything taller than that room scrolls.
+            windowRect.sizeDelta = new Vector2(width, y);
 
             window.SetActive(false);
+        }
+
+        // ---- where the window sits ---------------------------------------------
+
+        /// <summary>
+        /// Docking runs here rather than in Update: the mapper is dragged by its own
+        /// behaviour, and a panel placed before it has moved is one frame behind it,
+        /// which reads as the join coming apart while it is dragged.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (block != null && built && window != null && window.activeSelf)
+            {
+                Dock();
+            }
+        }
+
+        /// <summary>
+        /// Puts the panel against the bottom edge of Besiege's mapper, the same width
+        /// as it, so the two read as one window with a seam.
+        ///
+        /// The mapper is mesh UI in world space -- nothing this could be parented
+        /// into -- so the join is made by measuring where it lands on screen, every
+        /// frame, because it can be dragged.
+        /// </summary>
+        private void Dock()
+        {
+            Rect frame;
+            if (!MapperFrame(out frame))
+            {
+                // Stay where we are rather than jumping to a corner.
+                return;
+            }
+
+            if (Widen(frame))
+            {
+                // Rebuilt *and* placed in the same frame. Returning here instead
+                // leaves the window where it was and clears the flag that lets this
+                // run at all, so it never docks and never follows again.
+                if (!Build())
+                {
+                    return;
+                }
+                // BuildWindow leaves what it builds switched off, and the Show that
+                // would switch it on has already run: the first open takes its width
+                // from the mapper, rebuilds here, and without this the panel is built
+                // and never seen.
+                window.SetActive(true);
+                Bind();
+                ReadFromBlock();
+                Canvas.ForceUpdateCanvases();
+            }
+
+            float scale = Scale();
+            // As tall as the rows, or as tall as the room under the mapper, whichever
+            // is less -- the scroll view takes up the difference.
+            float room = frame.yMin * scale - Clearance;
+            float tall = Mathf.Max(RowHeight * 4f, Mathf.Min(contentHeight, room));
+            windowRect.sizeDelta = new Vector2(width, tall);
+
+            float left = (frame.xMin - Screen.width * 0.5f) * scale;
+            float bottom = (frame.yMin - Screen.height * 0.5f) * scale;
+            windowRect.anchoredPosition =
+                new Vector2(left + width * 0.5f, bottom - tall * 0.5f);
+        }
+
+        /// <summary>
+        /// Canvas units per screen pixel. The scaler matches on height against a
+        /// 1080-tall reference, so one unit is one pixel at 1080p.
+        /// </summary>
+        private float Scale()
+        {
+            return Screen.height > 0 ? Reference.y / Screen.height : 1f;
+        }
+
+        /// <summary>
+        /// Takes the panel's width from the mapper's. True if it changed, in which
+        /// case the rows -- laid out to it -- no longer fit and have to be rebuilt.
+        /// </summary>
+        private bool Widen(Rect frame)
+        {
+            float wide = frame.width * Scale();
+            if (Mathf.Abs(wide - width) <= 0.5f)
+            {
+                return false;
+            }
+            width = wide;
+            built = false;
+            return true;
+        }
+
+        /// <summary>
+        /// Besiege's mapper window in screen pixels, or false if it cannot be found.
+        ///
+        /// The window has to be picked out of everything the mapper draws, and the
+        /// answer is not guessable -- it was read out of the game. With a block open
+        /// at 4K the mapper draws, among other things:
+        ///
+        ///     Background   874.80 x 389.88   at y 1540.87   &lt;- the window
+        ///     Background   874.80 x 281.88   at y 1540.87   &lt;- a section inside it
+        ///     WideShadow   972.00 x 194.40   at y 1638.37   &lt;- the shadow, 11% wider
+        ///     Visual        93.31 x  93.31                  &lt;- a button
+        ///
+        /// So the window is a `Background`, they all share its width, and the tallest
+        /// of them is the frame. Docking to the widest thing drawn lands on
+        /// `WideShadow` and makes the panel an eleventh too wide; docking to `Visual`
+        /// by its promising name lands on a 93-pixel button.
+        /// </summary>
+        private bool MapperFrame(out Rect frame)
+        {
+            frame = new Rect();
+            try
+            {
+                BlockMapper mapper = BlockMapper.CurrentInstance;
+                if (mapper == null)
+                {
+                    return false;
+                }
+                Renderer[] parts = mapper.GetComponentsInChildren<Renderer>(false);
+                Camera eye = null;
+                Rect best = new Rect();
+                bool found = false;
+
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (parts[i] == null || !parts[i].enabled
+                        || parts[i].name != "Background")
+                    {
+                        continue;
+                    }
+                    if (eye == null)
+                    {
+                        eye = MapperCamera(parts[i].gameObject.layer);
+                        if (eye == null)
+                        {
+                            Explain("no camera draws layer "
+                                    + parts[i].gameObject.layer.ToString());
+                            return false;
+                        }
+                    }
+                    Rect here = ScreenRect(parts[i], eye);
+                    if (here.width < 1f || here.height < 1f)
+                    {
+                        continue;
+                    }
+                    if (!found || here.height > best.height)
+                    {
+                        found = true;
+                        best = here;
+                    }
+                }
+
+                if (!found)
+                {
+                    Explain("none of the mapper's " + parts.Length.ToString()
+                            + " parts look like its window");
+                    return false;
+                }
+                Explain("docking to the mapper at " + best.ToString());
+                frame = best;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Explain("could not measure the mapper: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>One renderer's world box, in screen pixels.</summary>
+        private static Rect ScreenRect(Renderer part, Camera eye)
+        {
+            Bounds box = part.bounds;
+            Vector3 a = eye.WorldToScreenPoint(
+                new Vector3(box.min.x, box.min.y, box.center.z));
+            Vector3 b = eye.WorldToScreenPoint(
+                new Vector3(box.max.x, box.max.y, box.center.z));
+            return new Rect(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                            Mathf.Abs(b.x - a.x), Mathf.Abs(b.y - a.y));
+        }
+
+        /// <summary>
+        /// The camera the mapper is drawn by, found by the layer it is on rather than
+        /// by name: its interface is in the world, and only the camera rendering that
+        /// layer knows where on screen it ends up. The topmost such camera, since
+        /// Besiege draws its interface last.
+        /// </summary>
+        private Camera MapperCamera(int layer)
+        {
+            if (mapperEye != null && mapperEye.isActiveAndEnabled
+                && (mapperEye.cullingMask & (1 << layer)) != 0)
+            {
+                return mapperEye;
+            }
+            mapperEye = null;
+            Camera[] all = Camera.allCameras;
+            for (int i = 0; i < all.Length; i++)
+            {
+                if ((all[i].cullingMask & (1 << layer)) != 0
+                    && (mapperEye == null || all[i].depth > mapperEye.depth))
+                {
+                    mapperEye = all[i];
+                }
+            }
+            return mapperEye;
+        }
+
+        /// <summary>
+        /// What the panel found to dock to, said once a session. The join is measured
+        /// off another mod's furniture, so when it is wrong this line is the
+        /// difference between a diagnosis and a guess.
+        /// </summary>
+        private static bool explained;
+
+        private static void Explain(string what)
+        {
+            if (explained)
+            {
+                return;
+            }
+            explained = true;
+            Log.Info(what);
         }
 
         /// <summary>Places a rect against the window's top-left corner.</summary>
@@ -451,7 +749,7 @@ namespace BraidsSynth
         private Text Label(string text, float x, float y, float w, float h,
                            int size, TextAnchor align, Color ink)
         {
-            GameObject go = UIF.Spawn(UIF.TextPrefab, window.transform);
+            GameObject go = UIF.Spawn(UIF.TextPrefab, host);
             if (go == null)
             {
                 return null;
@@ -481,11 +779,11 @@ namespace BraidsSynth
         private float BuildScope(float y)
         {
             GameObject go = new GameObject("Scope", typeof(RectTransform));
-            go.transform.SetParent(window.transform, false);
-            Place(go, Margin, y, Width - Margin * 2f, ScopeHeight);
+            go.transform.SetParent(host, false);
+            Place(go, Margin, y, width - Margin * 2f, ScopeHeight);
 
             scopeImage = go.AddComponent<RawImage>();
-            scope = new Scope(Mathf.RoundToInt(Width - Margin * 2f),
+            scope = new Scope(Mathf.RoundToInt(width - Margin * 2f),
                               Mathf.RoundToInt(ScopeHeight));
             scopeImage.texture = scope.Texture;
             scopeImage.raycastTarget = true;
@@ -498,92 +796,42 @@ namespace BraidsSynth
             return y + ScopeHeight + Margin;
         }
 
+        /// <summary>
+        /// The model: `&lt; name &gt;`, centred in its row with no caption beside it.
+        /// The arrows step to the next model and the name between them opens the
+        /// whole list. Special Effects' own control, and built rather than taken from
+        /// a prefab for the reason written at the top of it -- the prefab drop-down's
+        /// list spills past the panel and paints its overflow over the world.
+        ///
+        /// The list hangs off the canvas rather than off this row, or the scroll view
+        /// would clip it the moment it reached past the bottom of the panel.
+        /// </summary>
         private float BuildModels(float y)
         {
-            Label("MODEL", Margin, y, 200f, 18f, 12, TextAnchor.MiddleLeft, UIF.QuietInk);
-            y += 20f;
-
-            int rows = (BraidsModels.Count + ModelColumns - 1) / ModelColumns;
-            float columnWidth = (Width - Margin * 2f - RowGap * (ModelColumns - 1))
-                                / ModelColumns;
-
-            for (int i = 0; i < BraidsModels.Count; i++)
-            {
-                int column = i / rows;
-                int row = i % rows;
-
-                GameObject button = UIF.Spawn(UIF.ButtonPrefab, window.transform);
-                if (button == null)
-                {
-                    continue;
-                }
-                button.name = BraidsModels.Name(i);
-                Place(button, Margin + column * (columnWidth + RowGap),
-                      y + row * (RowHeight + RowGap), columnWidth, RowHeight);
-                UIF.NoSwell(button);
-
-                // The prefab's own background cannot be reliably tinted -- UI
-                // Factory draws it with a custom shader that need not multiply by
-                // the renderer's colour -- so the mark is an Image of ours behind
-                // the label, borrowing the prefab's sprite to keep its corners.
-                Image face = button.GetComponent<Image>();
-                GameObject markObject = new GameObject("Mark", typeof(RectTransform));
-                markObject.transform.SetParent(button.transform, false);
-                RectTransform markRect = markObject.transform as RectTransform;
-                markRect.anchorMin = Vector2.zero;
-                markRect.anchorMax = Vector2.one;
-                markRect.offsetMin = Vector2.zero;
-                markRect.offsetMax = Vector2.zero;
-                markRect.SetAsFirstSibling();
-
-                Image mark = markObject.AddComponent<Image>();
-                if (face != null)
-                {
-                    mark.sprite = face.sprite;
-                    mark.type = face.type;
-                }
-                mark.color = new Color(0f, 0f, 0f, 0f);
-                mark.raycastTarget = false;
-                modelMarks[i] = mark;
-
-                Text label = button.GetComponentInChildren<Text>(true);
-                if (label != null)
-                {
-                    UIF.Untranslate(label);
-                    label.text = BraidsModels.Name(i).ToUpper();
-                    label.fontSize = 12;
-                    label.resizeTextForBestFit = false;
-                    label.alignment = TextAnchor.MiddleCenter;
-                    label.horizontalOverflow = HorizontalWrapMode.Overflow;
-                    RectTransform labelRect = label.rectTransform;
-                    if (labelRect != button.transform)
-                    {
-                        labelRect.anchorMin = Vector2.zero;
-                        labelRect.anchorMax = Vector2.one;
-                        labelRect.offsetMin = Vector2.zero;
-                        labelRect.offsetMax = Vector2.zero;
-                    }
-                }
-                modelLabels[i] = label;
-
-                Button click = button.GetComponent<Button>();
-                if (click != null)
-                {
-                    int chosen = i;
-                    click.onClick.AddListener(delegate { ChooseModel(chosen); });
-                }
-            }
-
-            return y + rows * (RowHeight + RowGap) + Margin;
+            float full = width - Margin * 2f;
+            float w = Mathf.Min(SelectorWidth + (Chooser.ArrowWidth + Chooser.ArrowGap) * 2f,
+                                full);
+            modelPicker = Chooser.Make(host, transform, Margin + (full - w) * 0.5f, y,
+                                       w, RowHeight, modelNames,
+                                       block != null && block.Model != null
+                                           ? block.Model.Value : 0);
+            return y + RowHeight + Margin;
         }
+
+
+        private const int MeaningFontSize = 15;
 
         private float BuildMeanings(float y)
         {
-            timbreMeaning = Label("", Margin, y, Width - Margin * 2f, 16f, 12,
-                                  TextAnchor.MiddleLeft, UIF.QuietInk);
+            // A larger face on the same 18-unit pitch as before: the two lines are
+            // read once each time the model changes, and the panel has no room to
+            // spend on giving them more height. The labels overflow vertically, so
+            // the box stays 16 and the glyphs draw past it.
+            timbreMeaning = Label("", Margin, y, width - Margin * 2f, 16f,
+                                  MeaningFontSize, TextAnchor.MiddleLeft, UIF.QuietInk);
             y += 18f;
-            colourMeaning = Label("", Margin, y, Width - Margin * 2f, 16f, 12,
-                                  TextAnchor.MiddleLeft, UIF.QuietInk);
+            colourMeaning = Label("", Margin, y, width - Margin * 2f, 16f,
+                                  MeaningFontSize, TextAnchor.MiddleLeft, UIF.QuietInk);
             return y + 18f + Margin;
         }
 
@@ -644,7 +892,10 @@ namespace BraidsSynth
         }
 
         private const float DialNameWidth = 74f;
-        private const float DialValueWidth = 96f;
+        private const float DialValueWidth = 85f;
+        // The value slots are typed into, so they carry a larger face than the
+        // captions beside them -- a caret is easier to place in a bigger glyph.
+        private const int ValueFontSize = 16;
 
         private Dial BuildDial(string name, float y)
         {
@@ -653,9 +904,9 @@ namespace BraidsSynth
                               TextAnchor.MiddleLeft, Color.white);
 
             float left = Margin + DialNameWidth;
-            float right = Width - Margin - DialValueWidth;
+            float right = width - Margin - DialValueWidth;
 
-            GameObject go = UIF.Spawn(UIF.SliderPrefab, window.transform);
+            GameObject go = UIF.Spawn(UIF.SliderPrefab, host);
             if (go != null)
             {
                 go.name = name;
@@ -690,7 +941,8 @@ namespace BraidsSynth
         private void BuildValue(Dial dial, string name, float x, float y,
                                 float w, float h)
         {
-            Text text = Label("", x, y, w, h, 12, TextAnchor.MiddleRight, Color.white);
+            Text text = Label("", x, y, w, h, ValueFontSize, TextAnchor.MiddleRight,
+                              Color.white);
             if (text == null)
             {
                 return;
@@ -698,7 +950,7 @@ namespace BraidsSynth
             dial.Value = text;
 
             GameObject root = new GameObject(name + " Value", typeof(RectTransform));
-            root.transform.SetParent(window.transform, false);
+            root.transform.SetParent(host, false);
             Place(root, x, y, w, h);
 
             Image face = root.AddComponent<Image>();
@@ -726,13 +978,13 @@ namespace BraidsSynth
 
         private float BuildPreview(float y)
         {
-            GameObject button = UIF.Spawn(UIF.ButtonPrefab, window.transform);
+            GameObject button = UIF.Spawn(UIF.ButtonPrefab, host);
             if (button == null)
             {
                 return y;
             }
             button.name = "Preview";
-            Place(button, Margin, y, Width - Margin * 2f, PreviewHeight);
+            Place(button, Margin, y, width - Margin * 2f, PreviewHeight);
             UIF.NoSwell(button);
 
             Image face = button.GetComponent<Image>();
@@ -775,18 +1027,6 @@ namespace BraidsSynth
         private const float PreviewHeight = RowHeight + 2f;
 
         // ---- driving it --------------------------------------------------------
-
-        private void CloseMapper()
-        {
-            try
-            {
-                BlockMapper.Close();
-            }
-            catch (Exception)
-            {
-                Hide();
-            }
-        }
 
         private void ChooseModel(int model)
         {
@@ -1041,6 +1281,14 @@ namespace BraidsSynth
 
             Typing();
 
+            // Polled rather than bound: ShowModel writes the index itself, and a
+            // listener would take that straight back as a change.
+            if (modelPicker != null && modelPicker.Index != shownModel
+                && block.Model != null)
+            {
+                ChooseModel(modelPicker.Index);
+            }
+
             // The mapper's own widgets can be moved too, so the panel follows the
             // block rather than assuming it is the only thing writing to it.
             ReadFromBlock();
@@ -1146,23 +1394,9 @@ namespace BraidsSynth
         private void ShowModel(int model)
         {
             shownModel = model;
-            for (int i = 0; i < modelMarks.Length; i++)
+            if (modelPicker != null)
             {
-                bool chosen = i == model;
-                if (modelMarks[i] != null)
-                {
-                    modelMarks[i].color = chosen
-                        ? UIF.Selected
-                        : new Color(0f, 0f, 0f, 0f);
-                }
-                if (modelLabels[i] != null)
-                {
-                    // Braids' own models first, then the raw waveforms, which are
-                    // not models and are written quieter to say so.
-                    modelLabels[i].color = chosen
-                        ? Color.white
-                        : (i < BraidsModels.WaveformsFrom ? Color.white : UIF.QuietInk);
-                }
+                modelPicker.Set(modelNames, model);
             }
 
             bool usesTimbre = BraidsModels.UsesTimbre(model);
