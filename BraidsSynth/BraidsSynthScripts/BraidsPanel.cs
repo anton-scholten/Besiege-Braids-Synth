@@ -1013,6 +1013,14 @@ namespace BraidsSynth
                 previewLabel.resizeTextForBestFit = false;
                 previewLabel.alignment = TextAnchor.MiddleCenter;
                 previewLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+
+                // The prefab's own swell grows the whole plate, which on a
+                // full-width row carries the lettering out past the window; its
+                // ScaleAnimation went off above. This grows the words instead, and
+                // stands down on its own when the button is not interactable.
+                Swell swell = button.AddComponent<Swell>();
+                swell.grows = previewLabel.transform;
+                swell.grown = 1.15f;
             }
 
             Button click = button.GetComponent<Button>();
