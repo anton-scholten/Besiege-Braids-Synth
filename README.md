@@ -1,5 +1,11 @@
 # Besiege Braids Synth
 
+> **Archived.** This block now ships inside
+> **[Besiege Music](https://github.com/anton-scholten/Besiege-Music)**, alongside
+> eleven other instrument blocks and a MIDI loader that writes the machine that
+> plays them. Braids is one of its models, and it is the copy that gets fixes.
+> This repository is kept for its history only — install Besiege Music instead.
+
 A macro-oscillator block, in [Besiege](https://store.steampowered.com/app/346010/Besiege/).
 
 ![The synth block on a machine, its panel open on the model list and the note inside the block lit magenta](Promo_1.jpg)
@@ -16,6 +22,9 @@ identically to Braids' own C++** — see [Fidelity](#fidelity).
 (another Besiege mod which enables the nice UI, see workshop item `2913469777`) or the block cannot be set up.
 
 ## Install
+
+The mod below still builds and runs, but nothing further is done to it — for a
+working install, take [Besiege Music](https://github.com/anton-scholten/Besiege-Music).
 
 Either subscribe to the mod on Steam, or if you don't use Steam you can clone the repo then:
 
