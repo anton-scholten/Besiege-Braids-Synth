@@ -4,6 +4,19 @@
 
 First cut. A Synth Block that renders Braids' macro-oscillator live.
 
+**Fixed**
+
+- **Besiege's master volume slider did not reach the synth blocks.** The
+  per-category sliders do -- BLOCKS and SFX are exposed parameters on an
+  `AudioMixer`, and a block's `AudioSource` is routed through a mixer group -- but
+  the master slider sets `AudioListener.volume`, and Unity does not apply that to
+  audio coming out of a mixer. The block applies it itself now, read on the game
+  thread in `Place` and folded into the envelope's target so a slider move slews in
+  rather than stepping, and only where the game does not: a source with no mixer
+  group is still scaled by the listener, and applying it there too would work the
+  slider twice. The same hole is in any mod that gives a block an `AudioSource` --
+  fixed alongside this in Orchestra and Sound Blocks.
+
 **Working**
 
 - **Braids' sixteen analog-family models**, ported from `macro_oscillator.cc`:

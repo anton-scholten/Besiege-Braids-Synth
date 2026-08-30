@@ -83,6 +83,11 @@ namespace BraidsSynth
         private volatile float wantVolume;
         private volatile float attackPerSample;
         private volatile float releasePerSample;
+        /// <summary>Besiege's own master volume, or 1 where the game is already
+        /// applying it. Read on the game thread by <see cref="Place"/>, as every
+        /// other number the audio thread uses is.</summary>
+        private volatile float wantMaster = 1f;
+
         private volatile float wantLeft = 1f;
         private volatile float wantRight = 1f;
 
@@ -437,8 +442,50 @@ namespace BraidsSynth
         ///
         /// Game thread only -- a transform may not be touched from the audio thread.
         /// </summary>
+        /// <summary>
+        /// Besiege's master volume, when the game is not applying it to this block.
+        ///
+        /// Besiege has two kinds of volume control and they arrive differently. The
+        /// per-category sliders -- BLOCKS, SFX, MUSIC -- are exposed parameters on
+        /// an `AudioMixer`, written by `MusicController.LateUpdate`, and they reach
+        /// this block because its `AudioSource` is routed through a mixer group like
+        /// any other block's. The **master** slider is not: it sets
+        /// `AudioListener.volume`, and Unity does not apply that to audio coming out
+        /// of a mixer. So the one slider a player reaches for first did nothing
+        /// here.
+        ///
+        /// The block applies it itself, and only where the game does not: a source
+        /// with no mixer group is one the listener's own volume still scales, and
+        /// doubling it there would work the slider twice.
+        /// </summary>
+        private float MasterVolume()
+        {
+            if (source == null || source.outputAudioMixerGroup == null)
+            {
+                return 1f;
+            }
+            BesiegeConfig config = OptionsMaster.BesiegeConfig;
+            if (config == null)
+            {
+                return 1f;
+            }
+            if (!saidMaster)
+            {
+                saidMaster = true;
+                Log.Info("the master volume slider does not reach audio through "
+                         + "Besiege's mixer, so the synth blocks apply it themselves.");
+            }
+            // A percentage, as `OptionsMaster.SetMasterVolume` reads it.
+            return Mathf.Clamp01(config.MasterVolume / 100f);
+        }
+
+        /// <summary>Said once, so the log records which case this install is.</summary>
+        private static bool saidMaster;
+
         private void Place()
         {
+            wantMaster = MasterVolume();
+
             if (ear == null || !ear.isActiveAndEnabled)
             {
                 // Besiege swaps cameras between building and running, and the
@@ -615,7 +662,7 @@ namespace BraidsSynth
             oscillator.SetColour((short)wantColour);
 
             bool open = gateOpen || previewing;
-            float target = open ? wantVolume : 0f;
+            float target = open ? wantVolume * wantMaster : 0f;
             if (!open && level <= 0.0001f)
             {
                 // The stream is the silent clip's, so leaving it is silence.
